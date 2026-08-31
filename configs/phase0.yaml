@@ -1,10 +1,9 @@
-# Phase 0/1 schema v3の説明用コピー。実行設定の正本はconfigs/phase1.yaml。
-# ConvNeXt V2 scratch。実効B64/256/1024、microbatch 64、accum 1/4/16。
+# ConvNeXt V2 scratch schema v3. microbatch 64、LR 1e-3固定。100epoch予定を5epochで停止。
 schema_version: 3
 
 experiment:
-  name: phase1
-  phase: phase1
+  name: phase0
+  phase: phase0
   seed: 0
 
 paths:
@@ -23,7 +22,7 @@ model:
 
 training:
   epochs: 100
-  stop_after_epoch: null
+  stop_after_epoch: 5
   batch_size: 64
   microbatch_size: 64
   num_workers: 4

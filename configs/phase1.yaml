@@ -1,5 +1,4 @@
-# Phase 0/1 schema v3の説明用コピー。実行設定の正本はconfigs/phase1.yaml。
-# ConvNeXt V2 scratch。実効B64/256/1024、microbatch 64、accum 1/4/16。
+# ConvNeXt V2 scratch schema v3. 実効B64/256/1024、microbatch 64、accum 1/4/16。
 schema_version: 3
 
 experiment:
