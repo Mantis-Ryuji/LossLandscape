@@ -1,0 +1,89 @@
+# 検討中（Draft）: 設定項目と数値の参考例です。確定した実行設定ではありません。
+# paths の相対パスはプロジェクトルート基準の想定です（解決方法は未確定）。
+# 実装に進む際に仕様との整合を確認し、configs/ 配下の実行設定を作成します。
+
+experiment:
+  name: phase1_b64_seed0
+  seed: 0
+
+paths:
+  dataset_root: ./data
+  output_root: ./artifacts
+  init_checkpoint: ./artifacts/init/theta_0.pt
+
+model:
+  name: vit_small_patch16_224.dino
+  num_classes: 10
+  image_size: 224
+  full_finetune: true
+
+training:
+  epochs: 50
+  batch_size: 64
+  num_workers: 4
+  learning_rate: 1.0e-4
+  weight_decay: 0.05
+  optimizer: adamw
+  scheduler: cosine
+  warmup_epochs: 5
+  amp_dtype: bf16
+  gradient_clip_norm: null
+  checkpoint_interval_epochs: 1.0
+
+augmentation:
+  random_resized_crop: true
+  horizontal_flip: true
+  mixup: false
+  cutmix: false
+  randaugment: false
+
+split:
+  train_size: 45000
+  val_size: 5000
+  split_seed: 20260831
+
+landscape:
+  subset_size: 1000
+  subset_seed: 20260831
+  grid_size_coarse: 21
+  grid_size_final: 31
+  projection: pca
+  interpolation_points: 21
+
+phase1:
+  batch_sizes: [16, 64, 256]
+  seeds: [0, 1, 2]
+  same_learning_rate: true
+
+phase2:
+  branch_epoch: 30
+  end_epoch: 50
+  swa:
+    enabled: true
+    start_epoch: 35
+    learning_rate: 5.0e-5
+    average_every_epochs: 1
+  fge:
+    enabled: true
+    cycles: 5
+    learning_rate_min: 1.0e-5
+    learning_rate_max: 1.0e-4
+    snapshot_at_cycle_min: true
+
+phase3:
+  seed_runs: [0, 1, 2]
+  hyperparameter_variants:
+    - name: lr_low
+      learning_rate: 5.0e-5
+    - name: lr_high
+      learning_rate: 2.0e-4
+  evaluate_uniform_soup: true
+  evaluate_greedy_soup: true
+
+animation:
+  fps: 12
+  format: mp4
+  show_learning_rate: true
+  show_validation_loss: true
+  show_validation_accuracy: true
+  show_gradient_norm: true

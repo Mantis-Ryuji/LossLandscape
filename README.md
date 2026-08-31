@@ -4,6 +4,8 @@
 
 資料の一覧と配置方針は [ドキュメント案内](docs/README.md) を参照してください。
 
+作業順と進捗は [ToDo List](docs/TODO.md) で管理します。現在はPhase 1の実装前に設計・設定の整合を取る段階です。
+
 ## 目的
 
 自己教師あり事前学習済みモデルを CIFAR-10 に fine-tune したとき、**最適化軌跡が損失地形上をどう移動するか**をアニメーション中心で可視化する。
@@ -85,8 +87,10 @@ Phase 1 を先に完成させる。Phase 1 のアニメーションと保存系�
 
 - [AGENTS.md](AGENTS.md): Agent との共通作業規約（計画・仕様の草案とは別に扱う）
 - [docs/README.md](docs/README.md): 資料の一覧、配置方針、今後の検討事項
+- [docs/TODO.md](docs/TODO.md): 作業順、完了条件、進捗、未決定事項
 - [docs/EXPERIMENT_PLAN.md](docs/EXPERIMENT_PLAN.md): 研究・評価設計の草案
 - [docs/IMPLEMENTATION_SPEC.md](docs/IMPLEMENTATION_SPEC.md): 実装仕様と将来のフォルダ構成の案
+- [docs/REFERENCES.md](docs/REFERENCES.md): 参考論文・解説記事・公式実装・可視化ツールのリンク集
 - [docs/examples/config_example.yaml](docs/examples/config_example.yaml): 検討用の設定例（確定した実行設定ではない）
 
 ---
