@@ -1,6 +1,6 @@
 # Loss Landscape Dynamics on CIFAR-10
 
-> **2026-09-01 検証結果更新** — 実効B64/B256/B1024、microbatch 64、accum 1/4/16への変更後、ユーザー実行で設定確認4件とCPU unit test 64件が成功（11.626秒）。次は変更後コードのGPU確認です。変更前B64の5epoch・再開記録とは区別します。ConvNeXt V2-Tiny、AdamW・100epoch・固定LR 1e-3（warmupなし）、Phase 0・1・2はスクラッチ・Model SoupのみSSL初期値という方針は維持します。
+> **2026-09-01 検証状況更新** — V-04/V-05は完了しました。細線版の追加6件・全86件のCPU testがユーザー実行で成功し、Phase 0のtrain/validation GIFペアも完成。manifest、各3 MB以下、全epoch frame、固定軸・共通色尺度、保存済み成果物だけからの再描画、3本の識別性を確認しました。次はM-01でseed 0のB64/B256/B1024を各100epoch実行します。
 
 作業順は[TODO](docs/TODO.md)、研究条件は[実験計画](docs/EXPERIMENT_PLAN.md)、保存・再開・射影の契約は[実装仕様](docs/IMPLEMENTATION_SPEC.md)を参照してください。[資料一覧](docs/README.md)と[参考文献](docs/REFERENCES.md)もあります。
 
@@ -88,9 +88,11 @@ Phase 0は100epochの予定を保ち、**最初から固定LR 1e-3で5epoch学�
 - `models.py`：共通のスクラッチ初期stateを作成し、hash・layout・runtime・初期化方式を検証して復元。
 - `train.py` / `evaluate.py`：AdamW、固定LR、勾配蓄積、FP32評価、再開。端数の画像数平均と更新単位のstepを維持。設定の100epochとPhase 0の5epoch停止を分離し、最終更新でもLRを0にしません。
 - `checkpoints.py` / `logging_utils.py`：毎epoch保存、完了manifest、分岐の親子関係、JSON/CSV。
-- `scripts/`：設定確認、split準備、初期値作成・確認、学習のCLI。
-- `tests/`：小さなCPU fixtureによる検証。端数を含む物理batchとのgradient/AdamW状態比較、蓄積時の再開・非有限値停止を含む64件が、ユーザー実行で成功（11.626秒）。GPUの成立性は別に確認します。Agentは未実行です。
-- PCA・損失平面・GIF生成、SWA/FGE/Soupの実装はこれからです。
+- `loss_surface.py`：完成PCAの厳密な読込、共通格子、train/validation固定subsetの同時評価、共通色尺度、immutable surface artifact。
+- `animation.py`：完成PCA・両損失平面・実checkpoint指標の厳密な読込、固定表示、GIF圧縮fallback、immutable animation artifact。モデル・dataset・checkpointは読み込みません。
+- `scripts/`：設定確認、split準備、初期値作成・確認、学習、共通PCA、損失平面、GIF生成のCLI。
+- `tests/`：小さなCPU fixtureによる検証。細線版を含むV-04の6件と全86件がユーザー実行で成功しました。Agentは実行していません。
+- Phase 0の共通PCA、両損失平面、細線版GIFペアまで実データで検証済みです。次はPhase 1のseed 0・3run、SWA/FGE/Soupの実装はその後です。
 
 ## 今回の検証コマンド
 
@@ -130,7 +132,7 @@ splitは`split_verified`、初期値は`initial_checkpoint_created`、再読込�
 
 ## 学習・保存・再開の確認
 
-**変更前B64の5epoch・再開記録の照合と、変更後の64件CPUテストが完了しています。次の変更後コードのGPU確認では、既存成果物と衝突しない別名を使います。以下はB64・accum 1の5epoch確認であり、B256/B1024のGPU確認を兼ねるものではありません。**
+**変更前B64の5epoch・再開記録の照合、変更後の64件CPUテスト、B64/B256/B1024の5epoch GPU確認が完了しています。以下のB64手順は再現用であり、確認済み成果物へ再開・上書きしません。**
 
 ```powershell
 python -B scripts\run_train.py --config configs\phase0.yaml --name phase0_accum
@@ -146,9 +148,87 @@ python -B scripts\run_train.py --config configs\phase0.yaml --name phase0_accum
 python -B scripts\run_train.py --config configs\phase0.yaml --name phase0_accum --resume-from "artifacts\runs\phase0_accum\b64_seed0\segments\<新しいsegment_id>\epochs\epoch_0002"
 ```
 
-設定、初期値、split、runtime/GPU、ソース識別が異なる場合は停止します。再開一致・保存重みの読込・メモリをS-03で確認してから本比較へ進みます。
+設定、初期値、split、runtime/GPU、ソース識別が異なる場合は停止します。S-03では再開一致・保存記録・B256/B1024のGPUメモリを確認済みです。
 
-再開用の`scheduler_state`はschema v2で、`scheduler: constant`を保存します。旧schemaやcosineの状態を固定LRとして読み替えません。今回、設定のみv3へ変更し、初期モデルv2・epoch成果物の外側のv1とCSV列は維持します。B64確認だけで蓄積ありのGPU動作を確認済みとはせず、B256/B1024の実機確認はS-03に残します。
+再開用の`scheduler_state`はschema v2で、`scheduler: constant`を保存します。旧schemaやcosineの状態を固定LRとして読み替えません。今回、設定のみv3へ変更し、初期モデルv2・epoch成果物の外側のv1とCSV列は維持します。蓄積ありのGPU動作はB256/B1024の5epoch probeで確認済みです。
+
+## B256 / B1024 GPU probe
+
+B64の変更後runと再開確認は完了しました。Phase 0のseed 0・100epoch予定・5epoch停止を維持したまま、実効batchだけを上書きしてaccum 4/16を実データで確認します。両runは`phase0_accum_probe`系列の別directoryへ保存し、Phase 1の本runには数えません。
+
+まず設定とCPUテストを確認します。期待値はB256がmicrobatch 64・accum 4・176更新/epoch、B1024がmicrobatch 64・accum 16・44更新/epochです。
+
+```powershell
+python -B scripts\check_config.py --config configs\phase0.yaml --name phase0_accum_probe --batch-size 256
+python -B scripts\check_config.py --config configs\phase0.yaml --name phase0_accum_probe --batch-size 1024
+python -B -m unittest discover -s tests -v
+```
+
+全件成功後、GPU jobを同時に走らせず、次の順で各5epochを実行します。
+
+```powershell
+python -B scripts\run_train.py --config configs\phase0.yaml --name phase0_accum_probe --batch-size 256
+python -B scripts\run_train.py --config configs\phase0.yaml --name phase0_accum_probe --batch-size 1024
+```
+
+成果物は`artifacts/runs/phase0_accum_probe/b256_seed0/`と`b1024_seed0/`へ分離します。各epochでtrain 45,000件、最終epochでそれぞれ880/220更新、固定LR 1e-3、有限なloss/gradient、完了manifest、GPU peakを確認します。microbatchは両方64なのでOOM時に条件を自動変更しません。設定・ソース変更後のため、確認済み`phase0_accum/b64_seed0`へはさらに再開しません。
+
+## V-02: Phase 0共通PCA
+
+V-02までのCPU unit test 75件と、Phase 0の実成果物による18点の共通PCAはユーザー実行で成功済みです。
+
+```powershell
+python -B -m unittest discover -s tests -v
+```
+
+全件成功後、確認済みB64/B256/B1024をこの順で明示し、epoch 0〜5の計18点から共通PCAを作成します。GPUは使いません。各epochの完成manifestと4ファイルをhash検証するため、checkpointの読み出しに時間がかかります。
+
+```powershell
+python -B scripts\compute_projection.py `
+  --config configs\phase0.yaml `
+  --comparison-scope phase0_probe_seed0 `
+  --segment "artifacts\runs\phase0_accum\b64_seed0\segments\20260831T192447802206Z_4bc8003101f24d2abd30ed7c8223f7e8" `
+  --segment "artifacts\runs\phase0_accum_probe\b256_seed0\segments\20260901T040810290356Z_33ba760ec54141f9a53a8d22f44234c4" `
+  --segment "artifacts\runs\phase0_accum_probe\b1024_seed0\segments\20260901T042536616130Z_55bb9c27811f40b3a51b9731a2f55313"
+```
+
+作業用の18×27,874,186 FP32行列を`artifacts/work/<projection_id>/weights.npy`へ保存し、自動削除しません。平均・PC1・PC2・座標・残差・固有値・寄与率とmetadata/完了manifestは`artifacts/projections/<projection_id>/`へ新規保存します。成功時は最後に`status: projection_ready`、`sample_count: 18`、`parameter_count: 27874186`、2以上の`effective_rank`、有限な`explained_variance_ratio`を表示します。再実行は新しいprojection IDになり、既存結果を上書きしません。
+
+実行結果のprojection IDは`phase0_phase0_probe_seed0_20260901T085202502163Z_12676e9d04b9477d85b01242b139ae65`です。18点・27,874,186 parameter・有効rank 15、PC1/PC2の寄与率69.2020%/10.7069%で、完成manifest・配列shape・有限値・中心化・記録sizeの照合も完了しています。
+
+## V-03: Phase 0のtrain/validation損失平面
+
+V-03追加5件を含む計80件のCPU unit testは、ユーザー実行で成功済みです（11.256秒）。
+
+```powershell
+python -B -m unittest discover -s tests -v
+```
+
+全件成功後、V-02で完成したprojectionを明示して、同じ21×21格子上でtrain/validationの固定subset各1,000件をFP32評価します。各格子点でparameterを一度だけ割り当て、両背景を順に評価します。評価前処理済みbatchをCPUに保持するため約1.2 GBに加え、PCAのmean/PCとモデルの作業メモリを使用します。CUDA必須で、AMP・TF32・CPU fallbackは使いません。
+
+```powershell
+python -B scripts\compute_loss_surfaces.py `
+  --config configs\phase0.yaml `
+  --projection "artifacts\projections\phase0_phase0_probe_seed0_20260901T085202502163Z_12676e9d04b9477d85b01242b139ae65"
+```
+
+各背景441点、計882,000画像評価を行います。成果物は`artifacts/surfaces/<projection_id>/`に保存し、両loss/accuracy格子、共通20区間の色尺度、評価条件、subsetのhash、元checkpointのtrain-subset/full-validation実測値を含みます。実測validationは5,000件の元checkpoint評価で、validation背景の1,000件とは区別します。既存または未完成の同名surface directoryは上書き・補修しません。
+
+ユーザー実行で成果物が完成し、21×21の両格子は全点有限、lossの共通範囲は1.06553490018845〜2.17837490463257、train accuracy範囲は0.217〜0.628、validation accuracy範囲は0.233〜0.637でした。x/y軸と21個の色境界は単調増加し、色範囲は両lossを包含。18件の実checkpoint記録はtrain subset各1,000件・full validation各5,000件で、完成manifestに列挙された9ファイルのsize/hashも一致しました。
+
+## V-04: 保存済み成果物からのGIF生成
+
+V-04では[animation.py](src/landscape_exp/animation.py)と[render_animation.py](scripts/render_animation.py)を追加しました。完成projectionとsurfaceの全file hashを配列読込前に検証し、epoch 0〜最終epochを1frameずつ描画します。train背景版とvalidation背景版は軌跡、epoch、軸、共通色尺度、解像度、palette数を共有し、モデル評価・dataset読込・checkpoint deserializationを行いません。実GIFで既定色が背景と混ざることを確認したため、batchはB64=`#D55E00`、B256=`#56B4E9`、B1024=`#CC79A7`で固定し、各軌跡へ黒の外縁と白の内縁を付けます。これら5色を固定GIF paletteへ予約し、量子化後も保持します。seedは線種と現在点markerで表します。
+
+```powershell
+python -B -m unittest discover -s tests -v
+python -B scripts\render_animation.py `
+  --config configs\phase0.yaml `
+  --projection "artifacts\projections\phase0_phase0_probe_seed0_20260901T085202502163Z_12676e9d04b9477d85b01242b139ae65" `
+  --name phase0_seed0_batch_compare
+```
+
+描画はペア共通で960×640・128色から始め、960×640・64色、幅800・64色、幅640・64色の順にfallbackします。5 fps、最終frameの追加1,000 ms、全epoch、必須指標を維持し、両方がそれぞれ3,000,000 bytes以下になった場合だけ`artifacts/animations/<animation_id>/`へGIF 2本・metadata・完了manifestを新規公開します。`animation_id`は出力名・UTC時刻・UUIDから作り、sourceの`projection_id`はmetadataに固定します。このため、視認性を変えて再描画しても既存GIFを上書きしません。全設定で上限を超えた場合は未達として停止し、frameを間引きません。細線版`phase0_seed0_batch_compare_20260901T144613293970Z_dd07ca7cd8074514b4dc72724e365fae`は960×640・128色、train 79,284 bytes・validation 78,699 bytesで完成し、ユーザーが線幅と3本の識別性を承認しました。
 
 ## 方針転換時の削除
 

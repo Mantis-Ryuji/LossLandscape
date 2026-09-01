@@ -1,6 +1,6 @@
 # ドキュメント案内
 
-> **2026-09-01 検証結果更新** — 実効B64/B256/B1024、microbatch 64、accum 1/4/16の設定確認4件とCPU unit test 64件がユーザー実行で成功（11.626秒）。I-06完了、次は変更後コードのGPU確認です。変更前B64の5epoch・再開記録とは区別します。全フェーズでConvNeXt V2-Tiny、Phase 0・1・2はスクラッチ、SoupだけSSL初期値という境界は維持します。
+> **2026-09-01 検証状況更新** — V-04/V-05は完了しました。細線版の追加6件・全86件のCPU test、Phase 0実GIFペア、manifest・容量・表示を確認済みです。次はM-01でseed 0のB64/B256/B1024を各100epoch実行します。全フェーズでConvNeXt V2-Tiny、Phase 0・1・2はスクラッチ、SoupだけSSL初期値という境界は維持します。
 
 [プロジェクト概要に戻る](../README.md)
 
@@ -11,7 +11,7 @@
 | 資料 | 役割 | 状態 |
 | --- | --- | --- |
 | [プロジェクト概要](../README.md) | 目的、全体の流れ、検証コマンド | スクラッチ／Soup境界と新レシピを反映 |
-| [ToDo List](TODO.md) | 依存関係、担当、完了条件、進捗 | I-06完了。変更後のGPU確認を含むS-03は未完了 |
+| [ToDo List](TODO.md) | 依存関係、担当、完了条件、進捗 | V-04/V-05完了、次はM-01 |
 | [実験計画](EXPERIMENT_PLAN.md) | 研究上の問い、比較条件、評価、可視化、解釈の方針 | ConvNeXt V2・AdamWの初期レシピを採用、Phase 2・3詳細は未確定 |
 | [実装仕様](IMPLEMENTATION_SPEC.md) | モジュール構成、保存形式、処理手順、検証方法 | Phase 0・1の詳細契約を22節に記録、後段はDraft |
 | [参考文献・参考実装](REFERENCES.md) | 提供資料と補足資料のリンク、参照する論点 | 採用範囲を明記・その他は参照用 |
@@ -44,16 +44,27 @@ LossLandscape/
 │   ├── logging_utils.py
 │   ├── models.py
 │   ├── seeds.py
-│   └── train.py
+│   ├── train.py
+│   ├── landscape.py
+│   ├── projection.py
+│   ├── loss_surface.py
+│   └── animation.py
 ├── scripts/
 │   ├── check_config.py
 │   ├── create_init_checkpoint.py
+│   ├── compute_projection.py
+│   ├── compute_loss_surfaces.py
 │   ├── prepare_splits.py
+│   ├── render_animation.py
 │   └── run_train.py
 └── tests/
     ├── test_config.py
     ├── test_data.py
+    ├── test_animation.py
+    ├── test_landscape.py
+    ├── test_loss_surface.py
     ├── test_models.py
+    ├── test_projection.py
     ├── test_seeds.py
     └── test_training.py
 ```
@@ -70,8 +81,7 @@ I-01〜I-04を実装し、今回設定schema・勾配蓄積・テストを改訂
 
 ## 残る実装と確認
 
-- 勾配蓄積版の実データでの成立性・再開の再現性、B256/B1024のGPUメモリ・時間の測定。今回の64件CPU成功と変更前B64の結果を区別する。
-- 共通PCA・両背景・毎epochのGIFの実装と、可読性・各3 MB以下の確認。
+- M-01のseed 0・B64/B256/B1024各100epoch学習と、その後の共通PCA・両背景・GIF生成。
 - Phase 2のSWA/FGEは80〜100epochの共通4epoch三角周期を5回、同じ最低LRの5点での重み平均と予測確率平均を採用済み。毎epochの記録から採取し、半epochの追加保存は行わない。実装はこれから。Model Soupの固定LR 1e-4は確定し、残る条件・実装はその段階で進める。
 
 2026-09-01のユーザー訂正を優先し、旧DINO・全フェーズfine-tuningという前提を撤回しました。毎epoch記録・両背景・GIF各3 MB以下・保存容量上限なしという要件は維持します。設計、実装、実行検証は区別して記録します。

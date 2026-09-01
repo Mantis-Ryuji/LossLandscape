@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import sys
 import tempfile
 import unittest
@@ -122,10 +123,23 @@ class ConfigurationTests(unittest.TestCase):
                     load_config(self.write_config(source), project_root=self.root)
                 self.assertFalse((self.root / "artifacts").exists())
 
-    def test_phase0_cannot_become_a_different_batch_comparison(self) -> None:
+    def test_phase0_gpu_probes_keep_the_five_epoch_contract(self) -> None:
         text = (REPOSITORY_ROOT / "configs/phase0.yaml").read_text(encoding="utf-8")
+        source = self.write_config(text)
+        for batch, accumulation, updates in ((64, 1, 704), (256, 4, 176), (1024, 16, 44)):
+            with self.subTest(batch=batch):
+                config = load_config(source, project_root=self.root, batch_size=batch,
+                                     name="phase0_accum_probe").config
+                self.assertEqual(config.experiment.phase, "phase0")
+                self.assertEqual(config.experiment.seed, 0)
+                self.assertEqual(config.end_epoch, 5)
+                self.assertEqual(config.training.microbatch_size, 64)
+                self.assertEqual(config.training.accumulation_steps, accumulation)
+                self.assertEqual(math.ceil(config.split.train_size / batch), updates)
+                self.assertEqual(config.run_id, f"phase0_accum_probe/b{batch}_seed0")
         with self.assertRaises(ConfigError):
-            load_config(self.write_config(text), project_root=self.root, batch_size=256)
+            load_config(source, project_root=self.root, seed=1)
+        self.assertFalse((self.root / "artifacts").exists())
 
     def test_effective_batches_derive_accumulation_without_changing_lr(self) -> None:
         source = self.write_config(self.phase1)

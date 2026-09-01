@@ -342,7 +342,7 @@ def validate_config(config: ExperimentConfig) -> None:
     _require(t.weight_decay >= 0, "training.weight_decay must be nonnegative")
     _require(0 <= t.num_workers <= 4, "training.num_workers must be between 0 and 4")
     if e.phase == "phase0":
-        _require(e.seed == 0 and t.batch_size == 64, "Phase 0 requires B64, seed 0")
+        _require(e.seed == 0, "Phase 0 requires seed 0")
         _require(t.stop_after_epoch == 5, "Phase 0 requires stop_after_epoch=5")
     else:
         _require(t.stop_after_epoch is None, "Phase 1 requires stop_after_epoch=null")

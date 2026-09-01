@@ -122,9 +122,11 @@ SOTA accuracy を目的としない。
 
 目的は experimental pipeline の検証だけ。
 
-- batch size = 64
+- 基本sanity runは実効batch size 64
 - seed = 0
 - scheduleは本比較と同じ100epoch・固定LR 1e-3を保持し、5epoch終了時に停止する（`stop_after_epoch=5`）。warmupは行わない
+
+基本B64の学習・保存・再開確認後、同じPhase 0契約を使うGPU probeとして実効B256（microbatch 64・accum 4）とB1024（microbatch 64・accum 16）も各5epoch実行する。比較実験の本runではなく、実データ・bf16・端数実効batch・CUDAメモリ・成果物保存が成立するかの確認とする。seed 0、共通theta_0、train 45,000件、LR・optimizer・評価・記録間隔は変えない。別の実験名に保存し、既存B64やPhase 1成果物を上書きしない。
 
 確認事項:
 

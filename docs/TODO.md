@@ -10,7 +10,7 @@
 
 更新日: 2026-09-01
 
-**現在地:** 設定schema v3・勾配蓄積への変更後、ユーザー実行で設定確認4件とCPU unit test 64件の成功（11.626秒）を受領し、I-06を完了しました。実効B64/B256/B1024、microbatch 64、accum 1/4/16、704/176/44更新/epochが設定上一致。**次はS-03で変更後コードのGPU動作を確認します。** 変更前B64の5epoch・再開記録、共通初期値とsplitは保持。今回のCPU成功をGPU検証済みとは扱わず、SWA/FGE・Soupの条件・実装範囲は変更しません。
+**現在地:** V-04/V-05まで完了しました。細線版の追加6件・全86件のCPU testがユーザー実行で成功し、`phase0_seed0_batch_compare_20260901T144613293970Z_dd07ca7cd8074514b4dc72724e365fae`も完成。6 frame・960×640・128色・train 79,284 bytes・validation 78,699 bytesで、manifestのsize/hash、保存済み成果物だけからの再描画、線幅と3本の識別性を確認しました。**次はM-01でseed 0のB64/B256/B1024を各100epoch実行します。**
 
 [ドキュメント案内](README.md) / [実験計画](EXPERIMENT_PLAN.md) / [実装仕様案](IMPLEMENTATION_SPEC.md) / [参考文献](REFERENCES.md)
 
@@ -96,7 +96,19 @@ I-05で受領した旧設定schema v2の確認は両方とも`created_artifacts:
 
 - [x] S-01: 2026-09-01、ユーザー実行で`split_verified`、`initial_checkpoint_created`、`initial_checkpoint_verified`を受領。既存CIFAR-10・共有splitを再利用し、ConvNeXt V2-Tinyの共通スクラッチ初期値をCPUで作成・再読込確認。作成時と検証時のSHA-256が一致。[手順](../README.md#s-01-実データと共通初期重みの準備)
 - [x] S-02: 変更前のConvNeXt V2-Tiny・B64・seed 0・固定LR 1e-3で、ユーザー実行のepoch 0〜5成果物を確認。5epochで3,520更新、最終validation accuracy 62.82%、元runのpeak allocated約7.10GiB・reserved約7.60GiB。今回の勾配蓄積版の実機確認とは区別。
-- [ ] S-03: 変更前B64のepoch 2からの再開を照合済み。今回の勾配蓄積版のGPU動作・再開・B256/B1024のメモリ確認は未完了。新コードの確認runは別名にし、既存成果物を上書きしない。失敗時は原因を修正して再確認する。
+- [x] S-03: 変更後コードのB64・5epochとepoch 2からの再開一致に加え、B256/B1024のaccum 4/16によるseed 0・5epoch GPU probeを確認。全条件でmicrobatch 64を維持し、完了manifestと記録ファイルの存在・sizeが整合。B256/B1024のpeak allocatedは約7.19 GiB、reservedは約7.61 GiBで、OOMは発生しなかった。
+
+変更後B64の実行記録:
+
+- 元segment: `artifacts/runs/phase0_accum/b64_seed0/segments/20260831T192447802206Z_4bc8003101f24d2abd30ed7c8223f7e8`。epoch 0〜5、3,520更新、最終validation accuracy 62.82%。実効B64・microbatch 64・accum 1をcontract/environmentへ記録。peak allocated約7.10GiB、reserved約7.60GiB。
+- 再開segment: `20260901T035028813098Z_12c8434fba424b0e9b35ddd28358cc31`。元epoch 2を親としてepoch 3〜5を保存。時間・CUDA allocator値を除く指標が一致し、analysis/resume/metadataの保存済みhash・sizeも一致。Agentは大きなcheckpoint本体を再ハッシュしていない。
+- Phase 0のprobe許可に伴う今回のソース変更後は、このB64成果物へさらに再開しない。B256/B1024は`phase0_accum_probe`系列へ分離する。
+
+変更後B256/B1024 probeの実行記録:
+
+- B256: `artifacts/runs/phase0_accum_probe/b256_seed0/segments/20260901T040810290356Z_33ba760ec54141f9a53a8d22f44234c4`。epoch 0〜5、880更新、約17分13秒。最終validation accuracy 62.32%、peak allocated約7.19 GiB、reserved約7.61 GiB。
+- B1024: `artifacts/runs/phase0_accum_probe/b1024_seed0/segments/20260901T042536616130Z_55bb9c27811f40b3a51b9731a2f55313`。epoch 0〜5、220更新、約16分52秒。最終validation accuracy 42.24%、peak allocated約7.19 GiB、reserved約7.61 GiB。5epoch時点の更新回数差による精度差はprobe失敗とは扱わない。
+- 両runともepoch 0のtrain subset/validation実測値とparameter displacement 0がB64と一致。Agentは小さなJSON/CSV/manifestとfile sizeをread-onlyで照合し、大きなcheckpoint本体の再hash・tensor読込は行っていない。
 
 S-02・S-03の変更前B64記録（2026-09-01に照合）:
 
@@ -117,11 +129,11 @@ S-01の実行記録:
 
 依存: 学習・保存基盤とPhase 0の成果物。担当: Agentが実装・レビュー、ユーザーが実行。
 
-- [ ] V-01: 重みのベクトル化と復元、parameterの順序・shape・dtype・bufferの扱いを実装し、roundtripを検証。
-- [ ] V-02: 共通PCA、座標、寄与率、射影残差を生成・保存。比較対象を追加してPCAを作り直す場合は別の識別子で保存し、異なる座標系を混在させない。
-- [ ] V-03: train・validationそれぞれの固定subsetで、共通の21×21格子による損失平面を事前計算・保存。評価設定と対象subsetを追跡可能にする。
-- [ ] V-04: 固定した背景・軸・色尺度に、履歴・現在点・epoch・step・LR・実測指標を表示する動画生成を実装。train背景の主版とvalidation背景の補助版を同じ軌跡から生成し、再描画時はモデル評価を行わない。
-- [ ] V-05: Phase 0のcheckpointからtrain背景・validation背景の短い動画を生成し、時間軸、実測値、座標、保存済み成果物からの再描画を確認。各ファイル3 MB以下のGIF出力を確認。
+- [x] V-01: [landscape.py](../src/landscape_exp/landscape.py)に重みのベクトル化と復元、theta_0のparameter順序・shape・dtype・spec hash・buffer不変条件の照合を実装。[test_landscape.py](../tests/test_landscape.py)の追加6件を含む計70件が、2026-09-01のユーザー実行で成功（11.548秒）。Agentは実行していない。
+- [x] V-02: [projection.py](../src/landscape_exp/projection.py)と[compute_projection.py](../scripts/compute_projection.py)に、明示segmentのlineage解決、完了epoch全4ファイルのhash検証、共通FP32重み行列の逐次抽出、FP64 blocked Gram PCA、軸符号固定、座標・寄与率・射影残差、別projection IDへのimmutable保存を実装。2026-09-01、[test_projection.py](../tests/test_projection.py)の追加5件を含む計75件がユーザー実行で成功（13.351秒）。Phase 0の18点でも`phase0_phase0_probe_seed0_20260901T085202502163Z_12676e9d04b9477d85b01242b139ae65`が完成し、27,874,186 parameter・有効rank 15・PC1/PC2寄与率69.2020%/10.7069%、完成manifest・配列shape・有限値・中心化・記録sizeを照合した。Agentはプログラムを実行していない。
+- [x] V-03: [loss_surface.py](../src/landscape_exp/loss_surface.py)と[compute_loss_surfaces.py](../scripts/compute_loss_surfaces.py)に、完成projectionの全file hash検証、軌跡範囲＋10%余白の共通21×21格子、各格子点1回のparameter割当によるtrain/validation固定subset各1,000件のFP32評価、共通20区間色尺度、subset・前処理・数値条件・元checkpoint実測値を含むimmutable保存を実装。初回実行でpin-memoryが乱数snapshot後にCUDAを初期化する順序不整合を検出したため、CUDA初期化をcache前へ修正。2026-09-01、[test_loss_surface.py](../tests/test_loss_surface.py)の追加5件を含む計80件がユーザー実行で成功（11.256秒）。`artifacts/surfaces/phase0_phase0_probe_seed0_20260901T085202502163Z_12676e9d04b9477d85b01242b139ae65`も完成し、両441点の有限値、軸の単調増加、共通色尺度、各class 100件、18件の実checkpoint指標、9ファイルのsize/hash一致をAgentがread-onlyで照合した。Agentはプログラムを実行していない。
+- [x] V-04: [animation.py](../src/landscape_exp/animation.py)と[render_animation.py](../scripts/render_animation.py)に、完成projection/surface全fileのhash検証、共通epochの履歴・現在点、全runのstep・LR・train-subset/full-validation実測・epoch平均gradient norm・射影残差、寄与率、train/validationペア生成を実装。共通の圧縮fallback、5 fps、最終frame追加1,000 ms、全frame保持、各3,000,000 bytes上限、immutable完了manifestを含む。batch色をB64=`#D55E00`、B256=`#56B4E9`、B1024=`#CC79A7`に固定し、黒・白halo、GIF palette予約、細線設定を採用。2026-09-01、ユーザー実行で追加6件・全86件のCPU testが成功。モデル評価・dataset読込・checkpoint deserializationは行わない。
+- [x] V-05: Phase 0の18 checkpointからtrain背景・validation背景の細線版GIFペアを生成し、時間軸、実測値、共通座標・色尺度、保存済み成果物からの再描画を確認。成果物`phase0_seed0_batch_compare_20260901T144613293970Z_dd07ca7cd8074514b4dc72724e365fae`は6 frame・960×640・128色・train 79,284 bytes・validation 78,699 bytesで、manifest記載fileのsize/hashが一致。ユーザーが線幅と3本の識別性を承認した。
 
 完了条件: 保存済みの座標・格子・指標だけで動画を再生成でき、背景損失と実測損失の意味が表示から区別できる。
 

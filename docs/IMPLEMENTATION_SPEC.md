@@ -1,6 +1,6 @@
 # Implementation Specification for Codex
 
-> **2026-09-01 検証結果更新** — 設定schema v3・実効B64/B256/B1024・microbatch 64・accum 1/4/16への変更後、ユーザー実行で設定確認4件とCPU unit test 64件が成功（11.626秒）。変更後のGPU確認は未完了です。ConvNeXt V2-Tiny、Phase 0・1・2のスクラッチ、SoupだけSSL初期値、AdamW・100epoch・固定LR 1e-3は維持。初期モデルv2は再利用し、変更前B64の実データ記録と今回のCPU結果は区別します。
+> **2026-09-01 検証状況更新** — V-04/V-05は完了しました。細線版の追加6件・全86件のCPU testがユーザー実行で成功し、Phase 0実GIFペアも6 frame・960×640・128色・各3 MB以下で完成。manifest、保存済み成果物だけからの再描画、線幅と3本の識別性を確認しました。次はM-01でseed 0のB64/B256/B1024を各100epoch実行します。3条件の5epoch GPU動作とB64再開一致、ConvNeXt V2-Tiny、Phase 0・1・2のスクラッチ、SoupだけSSL初期値、AdamW・100epoch・固定LR 1e-3は維持します。
 
 [ドキュメント案内に戻る](README.md)
 
@@ -69,9 +69,9 @@ LossLandscape/
 │       ├── train.py
 │       ├── evaluate.py
 │       ├── checkpoints.py
-│       ├── parameters.py
 │       ├── projection.py
 │       ├── landscape.py
+│       ├── loss_surface.py
 │       ├── interpolation.py
 │       ├── averaging.py
 │       ├── animation.py
@@ -83,7 +83,7 @@ LossLandscape/
 │   ├── run_train.py
 │   ├── run_phase2_branch.py
 │   ├── compute_projection.py
-│   ├── compute_landscape.py
+│   ├── compute_loss_surfaces.py
 │   ├── compute_interpolations.py
 │   ├── evaluate_soups.py
 │   └── render_animation.py
@@ -93,7 +93,8 @@ LossLandscape/
 │   ├── test_seeds.py
 │   ├── test_models.py
 │   ├── test_training.py
-│   ├── test_parameters.py
+│   ├── test_landscape.py
+│   ├── test_loss_surface.py
 │   ├── test_interpolation.py
 │   ├── test_averaging.py
 │   ├── test_checkpoint_roundtrip.py
@@ -103,7 +104,7 @@ LossLandscape/
     ├── init/
     ├── runs/
     ├── projections/
-    ├── landscapes/
+    ├── surfaces/
     ├── interpolations/
     ├── soups/
     └── animations/
@@ -343,6 +344,10 @@ def evaluate_loss_surface(
 - Phase 1では両背景とも21×21点を使い、各441点・計882点を事前計算する。31×31への拡大は行わない
 - train・validationの損失格子を区別して保存し、projection識別子・x/y座標を共有する
 - 追加の学習runは行わず、背景データの違いでPCAや軌跡を計算し直さない
+
+**V-03実装・検証済み:** `loss_surface.py`は完成projectionのmanifestに列挙された全fileのsize/hashを、NumPy配列を開く前に照合する。現在のtheta_0・parameter layout・buffer・epoch 0・評価前処理・設定hashもprojectionと照合する。評価用前処理を一度だけ適用したtrain/validation batchをCPUに保持し、各格子点でFP64保存値から平面上のvectorを組み立ててFP32へ変換する。modelは一度だけGPUへ置き、各点でparameterを一度割り当てた後に両subsetを順に評価する。終了・例外のどちらでも呼出前のparameterとmodule modeを復元する。初回GPU実行でpin-memoryが乱数snapshot後にCUDAを初期化する順序不整合を検出し、CUDA初期化をcache前へ移した後、ユーザー実行の80件と実成果物で確認した。
+
+両背景は`artifacts/surfaces/<projection_id>/`にまとめ、`x_values.npy`、`y_values.npy`、両splitのloss/accuracy、20区間用の`color_levels.npy`、`checkpoint_metrics.json`、`metadata.json`、最後に`complete.json`を保存する。`checkpoint_metrics.json`のvalidationは元の高次元checkpointで測った全5,000件、背景の`validation_loss.npy`は固定1,000件であり、scopeを分けて記録する。同名directoryは完成・未完成を問わず上書きや補修を行わない。再計算には別projection IDを使う。
 
 ## Actual checkpoint evaluation
 
@@ -696,13 +701,14 @@ save/load 後に evaluation metric が一致。
 - 設定schema v3はYAMLの階層とfrozen dataclassの階層を一致させる。model.initializationと全体のinit_seed、training.microbatch_sizeを明示し、旧設定schema v1/v2は拒否する。全項目を必須とし、暗黙の設定継承は使わない。Phase 2・3はこのschemaへ混ぜない。初期モデルのschema v2と保存済みtheta_0は変更しない。
 - `training.batch_size`と`--batch-size`は実効バッチ64/256/1024、`training.microbatch_size`は64固定。`Training.accumulation_steps`は両者の比から導出し、独立したYAML項目やCLI引数を設けない。設定確認の出力とrun/segmentのenvironment、再開contractの`batching`へ実効batch・microbatch・蓄積回数・epoch更新数を記録する。
 - `configs/phase0.yaml`はB64・seed 0、`phase1.yaml`は共通条件のテンプレート。batch・seed・実験名だけCLIで上書きでき、上書き後の全設定も保存する。異なるrunのLR等をCLIから個別変更する仕組みは設けない。
+- Phase 0はseed 0・5epoch停止を固定したまま、実効B64/B256/B1024を許可する。B64はpipeline全体の基本sanity、B256/B1024はaccum 4/16のGPU probeである。probeには`phase0_accum_probe`という別の実験名を使い、Phase 1の100epoch本比較と混同しない。その他のbatch、seed 1/2、停止epochの変更は拒否する。
 - `experiment.name`は実験系列名。run_idは`<name>/b<batch>_seed<seed>`。名前には英小文字・数字・`_`・`-`のみを許可し、パス区切り・Windows予約名を拒否する。
 - 相対パスは実行時cwdやYAMLの親ではなく、明示したproject root基準。省略時はコードのあるリポジトリルート。`~`・環境変数の展開はしない。成果物をraw data配下へ配置しない。
 - I-01の`check_config.py`は既定で読み取りだけ。`--prepare-run`を明示したときだけ新規runの`source.yaml`・`config.json`・`prepared.json`を保存する。既存runには書き込まずエラー。途中失敗のファイルは自動削除しない。
 - `config.json`には解決済み絶対パスを含む全設定、`prepared.json`には元YAMLと有効設定のSHA-256、schema version、source pathを記録する。設定の確認はデータ・モデル・GPU・依存ライブラリの動作確認を意味しない。
 - 学習開始時に新規`environment.json`へPython・依存version・device・dtype・解決済み前処理・Git commitとdirty状態・ソースの識別情報を記録する。未コミットならcommit hashだけで再現可能とは扱わない。
 - split・subsetのindexは`.npz`とJSON metadata、射影の平均・基底・座標・残差はFP64の`.npy` / `.npz`とJSON、格子は`.npz`とJSON、学習状態は`.pt`に分離する。object配列は使わない。
-- projection_idは`<実験名>_<比較範囲>_<UTC時刻>_<UUID>`とし、対象run・epoch・checkpointの順序をmanifestに固定する。landscapeとGIFは同じprojection_id配下で管理し、別projectionの座標を混ぜない。再計算は新IDに保存する。
+- projection_idは`<実験名>_<比較範囲>_<UTC時刻>_<UUID>`とし、対象run・epoch・checkpointの順序をmanifestに固定する。loss surfaceは同じprojection_id配下で管理する。GIFは再描画をimmutableに残せるよう`<出力名>_<UTC時刻>_<UUID>`のanimation_id配下へ保存し、source projection_idとそのmanifest hashをmetadataに固定する。別projectionの座標を混ぜない。
 
 ## Training and the Phase 0 budget
 
@@ -742,8 +748,8 @@ save/load 後に evaluation metric が一致。
 - learning_rateは最後に実際に使った値、epoch 0はnull。learning_rate_nextは次更新予定値、最終完了時はnull。CSV・JSONには丸め前の値を残す。epoch_secondsは学習・評価・保存の内訳をmetadataへ併記する。
 - 動画はepoch 0〜最終epochの各点を1frameずつ順番に表示し、5fps、最後のframeを追加1000ms保持する。間の架空checkpointや平滑化は加えない。
 - 左に共通座標・固定contour・全履歴・現在点、右に各runのtrain-subset/full-validation lossとaccuracy、epoch平均gradient norm、LR、step。寄与率・現在点の射影残差も表示する。全9run版も各runの値を省略しない。loss推移など詳細は保存CSVから確認できる。
-- バッチ条件をmatplotlib既定色、seedを線種・markerで区別する。train/validationの対では同じ色・軌跡・軸・色尺度・時刻を使い、背景のsplit・各1,000件・FP32・plane lossを明記する。
-- GIFは960×640・128色を起点とし、必要時は64色、次に幅800、640へ縦横比を維持して再描画する。固定paletteと差分frameを使い、epoch点や必須指標は落とさない。文字が読めることをV-05で確認し、3,000,000 bytes以下であることを実測する。最小設定でも超過したら未達として報告し、学習や記録の間引きで対処しない。
+- バッチ条件はOkabe–Ito配色を基礎とし、最小版ではB64=`#D55E00`（vermillion）、B256=`#56B4E9`（sky blue）、B1024=`#CC79A7`（reddish purple）に固定する。各軌跡へ黒の外縁と白の内縁を付け、損失背景の暗部・明部の両方で輪郭を保つ。960px時は線本体1.5 pt、白halo 2.5 pt、黒halo 3.5 pt、現在点7 ptとし、縮小profileでは比率に応じて縮小しつつ視認性のための下限を設ける。3本の軌跡色と黒・白は固定GIF paletteへ予約し、量子化後も保持する。seedは線種・現在点markerで区別する。train/validationの対では同じ色・軌跡・軸・色尺度・時刻を使い、背景のsplit・各1,000件・FP32・plane lossを明記する。
+- GIFは960×640・128色を起点とし、必要時は64色、次に幅800、640へ縦横比を維持して再描画する。固定paletteと差分frameを使い、epoch点や必須指標は落とさない。文字に加えて各軌跡が背景の明暗全域で識別できることをV-05で確認し、3,000,000 bytes以下であることを実測する。最小設定でも超過したら未達として報告し、学習や記録の間引きで対処しない。
 
 ## PCA and the common grid
 
@@ -769,7 +775,7 @@ save/load 後に evaluation metric が一致。
 
 # 23. Training and Checkpoint Interfaces (I-04)
 
-**実装済み・勾配蓄積変更後のCPU成功を受領（2026-09-01）:** ユーザー実行で設定確認4件とCPU unit test 64件が成功（11.626秒）。実効batchからの蓄積回数、端数を含む小モデルでの物理batchとのgradient/AdamW近似一致、蓄積時の再開一致、非有限値の停止を含む。変更後の実データ・bf16・GPUメモリ確認は未完了。変更前コードの58件成功（11.231秒）とB64・5epoch/epoch 2からの再開結果は過去記録として区別する。Agentはコード・テスト・学習を実行していない。
+**実装済み・勾配蓄積変更後のCPU/GPU成功を受領（2026-09-01）:** 設定確認4件とCPU unit test 64件が成功（11.626秒）。変更後コードのB64・5epochはepoch 0〜5、3,520更新で完了し、旧B64と実測指標が一致。epoch 2からの再開でもepoch 3〜5の実測指標とanalysis/resume/metadataの記録済みSHA-256が元segmentと一致した。B256/B1024もmicrobatch 64・accum 4/16でepoch 0〜5を完了し、peak allocated約7.19 GiB、reserved約7.61 GiB。Agentは小さなJSON/CSV/manifestとfile sizeのみread-onlyで照合し、checkpoint本体のhash再計算やtensor読込はしていない。コード変更後はソース識別が変わるため、確認済みrunへさらに再開しない。
 
 ## Entry point and responsibility boundaries
 
