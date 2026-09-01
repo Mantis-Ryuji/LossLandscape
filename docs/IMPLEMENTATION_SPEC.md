@@ -1,6 +1,6 @@
 # Implementation Specification for Codex
 
-> **2026-09-01 検証状況更新** — V-04/V-05は完了しました。細線版の追加6件・全86件のCPU testがユーザー実行で成功し、Phase 0実GIFペアも6 frame・960×640・128色・各3 MB以下で完成。manifest、保存済み成果物だけからの再描画、線幅と3本の識別性を確認しました。次はM-01でseed 0のB64/B256/B1024を各100epoch実行します。3条件の5epoch GPU動作とB64再開一致、ConvNeXt V2-Tiny、Phase 0・1・2のスクラッチ、SoupだけSSL初期値、AdamW・100epoch・固定LR 1e-3は維持します。
+> **現在地** — Phase 0と可視化pipelineの実行確認は完了しています。現在はM-01として、seed 0のB64/B256/B1024を各100epoch実行します。
 
 [ドキュメント案内に戻る](README.md)
 
@@ -39,7 +39,7 @@ Python 3.10+。
 
 # 3. Suggested Repository Layout
 
-以下は全フェーズを見通した配置案であり、一括作成しない。I-01で設定基盤、I-02でデータ・seed、I-03で初期モデルを追加した。I-04では`train.py`・`evaluate.py`・`checkpoints.py`・`logging_utils.py`・`scripts/run_train.py`と対応するCPUテストを追加した。Phase 1は単一設定とbatch・seedの明示的な上書きで実行し、条件ごとの重複設定や設定継承は設けない。現在の配置は[ドキュメント案内](README.md)を参照する。
+以下は全フェーズを見通した配置案であり、必要な機能だけを各milestoneで追加する。Phase 1は単一設定とbatch・seedの明示的な上書きで実行し、条件ごとの重複設定や設定継承は設けない。現在の配置は[ドキュメント案内](README.md)を参照する。
 
 ```text
 LossLandscape/
@@ -155,7 +155,7 @@ I-02の`prepare_splits.py`は取得済みの公式trainだけを読み、自動�
 
 # 6. Model Initialization
 
-**2026-09-01改訂:** Phase 0・1では `model.name=convnextv2_tiny`、`model.initialization=scratch`、`model.init_seed=0`を固定する。旧 `head_seed` は全体の `init_seed` に置換し、設定・初期モデルのschemaをv2へ更新する。Phase 2はPhase 1のスクラッチ学習途中から分岐する。
+Phase 0・1では`model.name=convnextv2_tiny`、`model.initialization=scratch`、`model.init_seed=0`を固定する。Phase 2はPhase 1のスクラッチ学習途中から分岐する。
 
 ```python
 with preserve_random_state(), torch.device("cpu"):
@@ -173,11 +173,11 @@ backbone・headを一度の構築でモデル既定の方式により初期化�
 
 保存先は`artifacts/init/convnextv2_tiny_scratch/theta_0.pt`と同名JSON。`.pt`はtensorとprimitive containerで表すmodel_stateとmetadataを含む。metadataにはschema v2・kind・epoch 0・global_step 0、model設定、`initialization.mode=scratch`・init seed・モデル既定初期化という方式・`pretrained=false`、前処理、parameter/buffer/stateのlayout、作成時設定とhash、runtimeを記録する。`pretrained_reference=null`とし、timmの既定download URLを読込元と誤記しない。
 
-JSONは重みの保存・close後、サイズ・SHA-256を付けて最後に保存する。全runは同じ完成した初期値を復元する。既存・部分保存・破損は上書き・修復せず、初期化方式・model・runtime・layout・前処理・hashの不一致も拒否する。旧schema v1のDINO記録は新契約として受け付けない。ロードは信頼済みの自プロジェクト成果物へ`map_location="cpu", weights_only=True`を使用する。
+JSONは重みの保存・close後、サイズ・SHA-256を付けて最後に保存する。全runは同じ完成した初期値を復元する。既存・部分保存・破損は上書き・修復せず、初期化方式・model・runtime・layout・前処理・hashの不一致も拒否する。ロードはschema v2の信頼済み自プロジェクト成果物へ`map_location="cpu", weights_only=True`を使用する。
 
-`create_init_checkpoint.py --verify-only`は生成を行わず、保存済み記録を再読込する。作成・復元とも`pretrained_fetch_requested=false`を表示する。unit testにはbackbone/headの既定初期化、全batch/seedの初期値共有、事前学習指定の拒否、runtime・破損拒否を含める。変更後の実行検証はユーザーが行う。
+`create_init_checkpoint.py --verify-only`は生成を行わず、保存済み記録を再読込する。作成・復元とも`pretrained_fetch_requested=false`を表示する。unit testにはbackbone/headの既定初期化、全batch/seedの初期値共有、事前学習指定の拒否、runtime・破損拒否を含める。実行検証はユーザーが行う。
 
-**S-01のユーザー検証結果（2026-09-01）:** 実モデルは27,874,186 parameter、CPU FP32、init seed 0のscratchとして作成・再読込が成功し、SHA-256も一致。保存された評価前処理は224×224・center crop・crop_pct 0.875・bicubic。完全なhash・runtime・normalizationは[TODOのS-01実行記録](TODO.md#3-phase-0-実データによる短い確認)を参照する。これはGPU学習や再開の成立性を確認した結果ではない。
+**S-01検証結果:** 実モデルは27,874,186 parameter、CPU FP32、init seed 0のscratchとして作成・再読込が成功し、SHA-256も一致。保存された評価前処理は224×224・center crop・crop_pct 0.875・bicubic。GPU学習と再開はS-02・S-03で確認した。
 
 **Phase 3のみ:** [純粋なFCMAE checkpoint](https://huggingface.co/timm/convnextv2_tiny.fcmae)を共通SSL backboneとして使用する案。教師ありfine-tuning済みの`fcmae_ft_in1k`等とは区別する。別の共通head・初期値・run系列を作り、Phase 1の学習済み重みは使わない。Phase 3の設定・取得・初期化・学習はU-01で詳細を確定してから実装する。現在のPhase 0・1 CLIにpretrainedモードは設けない。
 
@@ -185,11 +185,11 @@ JSONは重みの保存・close後、サイズ・SHA-256を付けて最後に保�
 
 # 7. Checkpoint Format
 
-**保存・再開の確定事項（D-05の一部、2026-08-31）:** training resume 用checkpointとanalysis 用checkpointを分ける。以下の保存内容・頻度・再開位置をPhase 0とPhase 1に適用する。
+training resume用checkpointとanalysis用checkpointを分ける。以下の保存内容・頻度・再開位置をPhase 0とPhase 1に適用する。
 
-**保存容量の方針（D-05の一部確定）:** 初期状態と毎epochの解析用checkpointをすべて保持し、容量節約を目的とした間引き・精度低下・既存成果物の自動削除は行わない。再開用checkpointも既存の保存済みファイルを上書き・自動削除しない。設計上の容量上限を設けないことは、保存先の空き容量が無限にあることを意味しない。
+初期状態と毎epochの解析用checkpointをすべて保持し、容量節約を目的とした間引き・精度低下・既存成果物の自動削除は行わない。再開用checkpointも既存の保存済みファイルを上書き・自動削除しない。設計上の容量上限を設けないことは、保存先の空き容量が無限にあることを意味しない。
 
-**記録タイミング（D-02・D-05確定）:** 共通初期状態をepoch 0・`global_step = 0`として解析用に記録し、以降の解析用checkpoint・指標・再開用checkpointは全期間1 epoch単位、毎epoch終了時に記録する。Phase 0も同じ間隔とする。epochは完了したepoch数、`global_step`は累積optimizer更新回数を表す。
+共通初期状態をepoch 0・`global_step = 0`として解析用に記録し、以降の解析用checkpoint・指標・再開用checkpointは全期間1 epoch単位、毎epoch終了時に記録する。Phase 0も同じ間隔とする。epochは完了したepoch数、`global_step`は累積optimizer更新回数を表す。
 
 **Phase 2の平均用採取:** SWA/FGE共通の4epoch三角周期で最低LRとなるepoch 82・86・90・94・98終了時のcheckpointを、毎epochの記録から選ぶ。半epochでの追加保存は行わない。
 
@@ -280,7 +280,7 @@ ConvNeXt V2の標準構造にはBatchNormを使わないが、bufferの扱いと
 - メモリ節約のために対象checkpointを100件以下へ間引く案は採用しない。
 - 保存容量の上限は設けないが、RAM・VRAMの制約は維持する。22節の分割Gram行列方式、FP64、16,384 parameter/blockを採用する。IncrementalPCA・ランダム近似・checkpointの間引きは使わない。
 
-容量は新しい初期モデルのparameter数Pと、比較run数R・全期間Eから見積もる。FP32行列本体は4×P×R×(E+1) bytesで、checkpoint・作業配列は別に必要。旧DINOの21.7M parameter・50epochの見積もりは流用しない。行列をRAMへ一括ロードせず、必要容量・ピークRAM・所要時間はConvNeXt V2のPhase 0で実測する。保存容量上限や自動削除は設けない。
+容量は初期モデルのparameter数Pと、比較run数R・全期間Eから見積もる。FP32行列本体は4×P×R×(E+1) bytesで、checkpoint・作業配列は別に必要。行列をRAMへ一括ロードせず、必要容量・ピークRAM・所要時間を対象ごとに確認する。保存容量上限や自動削除は設けない。
 
 ### 保存する内容
 
@@ -643,11 +643,9 @@ save/load 後に evaluation metric が一致。
 
 ---
 
-# 21. Environment Check (2026-08-31)
+# 21. Environment and Phase 0 Verification
 
-**旧モデルの参考記録:** 以下はDINO構造での過去の環境確認であり、ConvNeXt V2の学習・メモリ保証ではない。2026-09-01の方針転換後は新モデルで再測定する。DINO初期重み・run成果物はユーザー指示で削除済み。
-
-この節は設計案の確定事項ではなく、ユーザーがコマンド実行を許可したうえで行った環境確認の記録である。実データによる学習・性能評価・収束確認は行っていない。
+Phase 0では、Phase 1と同じConvNeXt V2-Tiny・実データ・bf16学習・FP32評価・毎epoch保存を使い、B64/B256/B1024の5epoch実行とepoch境界再開を確認した。100epochの安定性や最終精度を保証する確認ではない。
 
 ## Hardware and environment
 
@@ -662,43 +660,33 @@ save/load 後に evaluation metric が一致。
 | PyTorch / CUDA runtime | `2.6.0+cu126` / `12.6` |
 | torchvision / timm | `0.21.0+cu126` / `1.0.24` |
 
-既定の`python`は別のPython 3.14.3を指していた。メモリ確認には既存のAnaconda `torch_env` を明示して使用し、パッケージの追加・更新は行っていない。空き容量は観測時点の値であり、実行時には変動する。
+学習には既存のAnaconda `torch_env`を使用し、パッケージの追加・更新は行っていない。空き容量と利用可能RAMは観測時点の値であり、実行時には変動する。
 
-## B256 memory probe
+## Phase 0 GPU verification
 
-- モデル: `vit_small_patch16_224.dino`、`num_classes=10`、`pretrained=False`。
-- パラメータ数: 21,669,514。全パラメータを更新対象とした。
-- 入力: GPU上のランダム画像 `[256, 3, 224, 224]` とランダムな10クラスのラベル。
-- 精度: パラメータはfloat32、forwardはbf16 autocast。
-- Attention: timmの`fused_attention=True`。実際のCUDAカーネル種別までは測定していない。
-- Optimizer: AdamW、LR `1e-4`、weight decay `0.05`。
-- 処理: `train()` モードでforward、Cross Entropy、backward、`optimizer.step()`を3回。各回でCUDA同期を行い、AdamWの状態作成を含めてピークを測定。
-- gradient accumulation / activation checkpointing / torch.compileは使用していない。
+- モデル: `convnextv2_tiny`、`num_classes=10`、`pretrained=False`、27,874,186 parameter。
+- データ: CIFAR-10 train 45,000件、validation 5,000件、入力224×224。
+- 精度: parameterとgradientはFP32、forwardはbf16 autocast、評価はFP32。
+- Optimizer: AdamW、固定LR 1e-3、weight decay 0.05。
+- 記録: epoch 0と各epoch終了時のanalysis/resume/metrics/metadata/manifest。
 
-| 指標 | 結果 |
-| --- | --- |
-| 3回の更新 | 完了。各回のlossが有限であることを確認 |
-| PyTorch peak allocated | 8.65 GiB |
-| PyTorch peak reserved | 8.88 GiB |
-| 3回目の更新後、プロセス終了前の空きVRAM | 約5.80 GiB |
-| 更新1回目の時間 | 約0.914秒 |
-| 更新2・3回目の時間 | それぞれ約0.200秒 |
+| 実効batch | microbatch | accum | 5epochの更新数 | peak allocated | peak reserved |
+| --- | --- | --- | --- | --- | --- |
+| 64 | 64 | 1 | 3,520 | 約7.10 GiB | 約7.60 GiB |
+| 256 | 64 | 4 | 880 | 約7.19 GiB | 約7.61 GiB |
+| 1024 | 64 | 16 | 220 | 約7.19 GiB | 約7.61 GiB |
 
-**この測定条件では、224×224入力のB256がVRAM内に収まった。** PyTorchのallocated / reservedはGPU全体の使用量とは異なる。時間はGPUに配置済みの同じ合成入力による短い測定であり、DataLoader、画像変換、validation、checkpoint保存などを含む実験全体の所要時間へそのまま換算しない。
-
-事前学習重みとCIFAR-10データはダウンロードしておらず、モデルやcheckpointの保存も行っていない。重みの値が異なる合成データでの確認であり、実際のfine-tuning pipeline全体の動作やメモリ上限を保証するものではない。モデル、入力解像度、精度、Attentionの実装、同時保持するモデル数を変更した場合は再測定が必要になる。
-
-元画像の32×32とモデル候補の224×224については [参考文献S07・S08](REFERENCES.md) を参照する。実験計画・設定例は今回の確認では変更していない。
+全条件で有限なloss/gradient、評価、保存、完了manifestを確認し、OOMは発生しなかった。B64ではepoch 2から新segmentへ再開し、時間とallocator計測値を除くepoch 3〜5の指標、analysis/resume/metadataの記録済みhashとsizeが連続実行と一致した。大容量のPhase 0成果物は保持対象外であり、Phase 1の入力には使用しない。
 
 ---
 
 # 22. Phase 0 / 1 Operational Contract (D-05 / D-06)
 
-**改訂（2026-09-01）:** 記録・射影・両背景・GIFの契約を維持し、モデルと初期化はユーザー訂正に従ってConvNeXt V2のスクラッチへ変更する。Phase 0・1はユーザー指定のAdamW・全期間100epoch・固定LR 1e-3、warmupなし。以下は実装契約であり、実行済みの報告ではない。
+Phase 0・1はConvNeXt V2-Tinyをスクラッチ初期化し、AdamW・全期間100epoch・固定LR 1e-3・warmupなしで学習する。記録・射影・両背景・GIFを含む実装契約を以下に定める。
 
 ## Configuration, identity and paths
 
-- 設定schema v3はYAMLの階層とfrozen dataclassの階層を一致させる。model.initializationと全体のinit_seed、training.microbatch_sizeを明示し、旧設定schema v1/v2は拒否する。全項目を必須とし、暗黙の設定継承は使わない。Phase 2・3はこのschemaへ混ぜない。初期モデルのschema v2と保存済みtheta_0は変更しない。
+- 設定schema v3はYAMLの階層とfrozen dataclassの階層を一致させる。model.initialization、全体のinit_seed、training.microbatch_sizeを明示し、全項目を必須とする。schema v3以外、暗黙の設定継承、Phase 2・3の未使用項目は受け付けない。初期モデルはschema v2を使う。
 - `training.batch_size`と`--batch-size`は実効バッチ64/256/1024、`training.microbatch_size`は64固定。`Training.accumulation_steps`は両者の比から導出し、独立したYAML項目やCLI引数を設けない。設定確認の出力とrun/segmentのenvironment、再開contractの`batching`へ実効batch・microbatch・蓄積回数・epoch更新数を記録する。
 - `configs/phase0.yaml`はB64・seed 0、`phase1.yaml`は共通条件のテンプレート。batch・seed・実験名だけCLIで上書きでき、上書き後の全設定も保存する。異なるrunのLR等をCLIから個別変更する仕組みは設けない。
 - Phase 0はseed 0・5epoch停止を固定したまま、実効B64/B256/B1024を許可する。B64はpipeline全体の基本sanity、B256/B1024はaccum 4/16のGPU probeである。probeには`phase0_accum_probe`という別の実験名を使い、Phase 1の100epoch本比較と混同しない。その他のbatch、seed 1/2、停止epochの変更は拒否する。
@@ -712,7 +700,7 @@ save/load 後に evaluation metric が一致。
 
 ## Training and the Phase 0 budget
 
-- 2026-09-01、ユーザー指定でAdamW・全期間100epoch・固定LR 1e-3を確定し、既存weight decay 0.05を維持する。`scheduler=constant`、`warmup_epochs=0`を必須とし、Phase 0・1ではcosine・非ゼロwarmup・別のLR値を拒否する。`epochs`は予定期間、`stop_after_epoch`は終了地点。Phase 0は本比較用の100epochを保って5epoch終了で停止する。採用理由と実証範囲は[実験計画4節](EXPERIMENT_PLAN.md#4-scratch-training-recipe)を参照する。
+- AdamW・全期間100epoch・固定LR 1e-3・weight decay 0.05を使う。`scheduler=constant`、`warmup_epochs=0`を必須とし、Phase 0・1ではcosine・非ゼロwarmup・別のLR値を拒否する。`epochs`は予定期間、`stop_after_epoch`は終了地点。Phase 0は100epochのscheduleを保って5epoch終了で停止する。採用理由と実証範囲は[実験計画4節](EXPERIMENT_PLAN.md#4-scratch-training-recipe)を参照する。
 - AdamWは全学習parameterに一様にweight decayを適用し、betas=(0.9, 0.999)、eps=1e-8を維持。層別LR・weight decayの除外groupを追加しない。勾配蓄積1/4/16回を使い、clipping・compile・分散学習は使わない。モデルparameterと蓄積gradientはFP32で維持し、forwardのみbf16 autocast。bf16ではscalerを使わない。
 - train DataLoaderは全条件で64件ずつ返す。同一seedではsampler・workerへの割当単位も共通。各実効バッチの先頭だけzero_gradとLR設定を行い、microbatchごとの平均lossに「microbatch画像数/当該実効バッチの実画像数」を掛けてbackwardする。全microbatch後にgradient normを計測してAdamWを1回更新する。activation graphはmicrobatch間で保持せず、全体をGPUへ載せたりretain_graphを使ったりしない。
 - 最後の実効バッチはB64で8件、B256で200件（64+64+64+8）、B1024で968件（64×15+8）。端数を名目batch数や固定の蓄積回数で割らず、実画像数で平均する。epoch内の全画像と更新数を検証し、途中の蓄積状態は保存・次epochへ持越ししない。非有限loss/gradientは当該optimizer更新前に停止し、完了epochを公開しない。
@@ -758,15 +746,15 @@ save/load 後に evaluation metric が一致。
 - ブロックをFP64へ変換して列平均を引き、X_bを作る。G=Σ_b X_b X_b^TをFP64で累積し、対称化したGを`numpy.linalg.eigh`で分解する。固有値の降順で上位2組を取り、v_i=X^T u_i/sqrt(lambda_i)をブロック再読で求める。全データの中心化PCAと同じ代数的定義であり、丸め誤差まで無くなるという意味ではない。
 - 固有値と固有vectorのAPIは[NumPy eigh](https://numpy.org/doc/2.1/reference/generated/numpy.linalg.eigh.html)を参照。FP64を使うのは近いcheckpointの差とGram計算の数値誤差を抑えるため。rank判定の閾値は1e-10×最大固有値。実質rankが2未満なら架空の軸を作らず、2D表示不能として報告する。
 - 最大絶対係数を正にして軸の符号を揃え、同率時はparameterの先頭を採る。V^T Vと復元誤差を検証する。寄与率はlambda_i/trace(G)、座標はXV、残差はブロックごとの(X-XVV^T)の二乗和から求める。平均・基底・座標・残差をFP64で保存する。
-- Phase 1は100epoch＋epoch 0で101時点/run。最小3runのN=303、全9runのN=909を全て使う。旧50epochの459行を前提とした見積もりは使わない。
-- 909行×16,384要素のFP64ブロックは約114MiB、FP64のGram行列本体は約6.3MiB。旧50epoch時より行数が増えるため、ブロック幅を縮小して作業領域に余裕を持たせる。複数の作業配列と平均・基底を含め、明示的な配列は約2GiB以内を目標に逐次処理する。OS cache・BLAS・Pythonを含むピークRAMの保証値ではなく、実際の対象行数に応じて測定する。Phase 0の6行での測定だけで全9runのピークを保証しない。ブロック幅を小さくする場合も記録点・PCAの定義は変えない。
+- Phase 1は100epoch＋epoch 0で101時点/run。最小3runのN=303、全9runのN=909を全て使う。
+- 909行×16,384要素のFP64ブロックは約114MiB、FP64のGram行列本体は約6.3MiB。複数の作業配列と平均・基底を含め、明示的な配列は約2GiB以内を目標に逐次処理する。OS cache・BLAS・Pythonを含むピークRAMの保証値ではなく、実際の対象行数に応じて測定する。Phase 0の18点での測定だけで全9runのピークを保証しない。ブロック幅を小さくする場合も記録点・PCAの定義は変えない。
 - x/y範囲は全比較対象の座標min/maxに、各軸の幅の10%ずつ余白を加える。幅が0の軸は中心±1e-6とする。格子は各軸21点の等間隔。色尺度は両背景の全有限lossのmin/maxを覆う20段階の線形尺度とし、外れ値を切り捨てない。一定loss時だけ描画用の微小幅を加え、元値を保存する。
 - 3run版と9run版は別projection。subsetは共通。格子範囲を再計算するときは両背景を同じ新IDに保存する。モデル評価は一度で、GIFの再描画では実行しない。
 
 ## Completion and verification boundaries
 
 - D-05・D-06の完了は設計と設定契約の整合まで。I-01は設定基盤、I-02〜I-05はデータ・初期重み・学習・評価・保存・検証。まだ実装していない機能を、設定があるだけで実装済みとは扱わない。
-- I-01は標準ライブラリと既存PyYAMLを使用。後続は既存torch/torchvision/timm/NumPy/matplotlib/Pillowを起点とし、依存更新はしない。2026-08-31のread-only調査でNumPyの2.1.3と2.4.2のdist-infoが併存していた。実際のimport versionと動作はユーザー実行で確認し、自動修復しない。
+- I-01は標準ライブラリとPyYAMLを使用する。後続はtorch/torchvision/timm/NumPy/matplotlib/Pillowを使い、依存更新は自動で行わない。実際のimport versionと動作はユーザー実行で確認し、環境を自動修復しない。
 - 最小版はseed 0の3 runs・2GIF、Phase 1完了は全9 runs・8GIF・全epochの設定/重み/実測/座標/残差と再現手順。差や精度改善が無くても、記録・評価・表示が成立すれば完了。
 - 寄与率が低い場合は図に明記し、3D化・別projection・条件追加を黙って実施しない。checkpoint補間はPhase 2準備に分離する。
 - 検証はユーザーが実行。コードの静的確認、unit testの結果、実データでの学習・再開結果、GIFの視認性・容量確認を別々に記録する。
@@ -775,7 +763,7 @@ save/load 後に evaluation metric が一致。
 
 # 23. Training and Checkpoint Interfaces (I-04)
 
-**実装済み・勾配蓄積変更後のCPU/GPU成功を受領（2026-09-01）:** 設定確認4件とCPU unit test 64件が成功（11.626秒）。変更後コードのB64・5epochはepoch 0〜5、3,520更新で完了し、旧B64と実測指標が一致。epoch 2からの再開でもepoch 3〜5の実測指標とanalysis/resume/metadataの記録済みSHA-256が元segmentと一致した。B256/B1024もmicrobatch 64・accum 4/16でepoch 0〜5を完了し、peak allocated約7.19 GiB、reserved約7.61 GiB。Agentは小さなJSON/CSV/manifestとfile sizeのみread-onlyで照合し、checkpoint本体のhash再計算やtensor読込はしていない。コード変更後はソース識別が変わるため、確認済みrunへさらに再開しない。
+設定確認、CPU unit test、Phase 0のB64/B256/B1024 GPU学習、B64のepoch境界再開はユーザー実行で成功している。資源値と検証範囲は21節を参照する。
 
 ## Entry point and responsibility boundaries
 
@@ -783,7 +771,7 @@ save/load 後に evaluation metric が一致。
 - `--batch-size`・`--seed`・`--name`はI-01と同じ上書き範囲。`--resume-from`は完了epochのdirectoryを指定する。相対パスはproject root基準。latestの推測や自動再開は設けない。
 - 本番deviceは`cuda:0`。torchをimportする前にプロセス内だけで`CUBLAS_WORKSPACE_CONFIG=:4096:8`を設定し、既存の異なる値は拒否する。native bf16が必要で、parameterはFP32、scalerなし。環境version・GPU識別・数値設定を記録する。
 - `EpochSchedule`は設定したepochの全期間を表し、Phase 0の停止条件とは分離する。CLIは設定の`scheduler`を明示して渡す。`constant`ではwarmup=0だけを許可し、`apply_next`で毎回同じbase LRを設定する。更新完了時だけ`completed_updates`を進め、最終更新もbase LRを保持し、全期間終了後のnext LRはnull。
-- 既存のcosine計算は低水準APIとそのunit testに残すが、Phase 0・1の設定では拒否する。`scheduler_state`はschema v2で`scheduler`種別も保存する。旧schema v1・種別欠落・別種別を推測で補わず、復元前に不一致として拒否する。
+- cosine計算は低水準APIとunit testに残すが、Phase 0・1の設定では拒否する。`scheduler_state`はschema v2で`scheduler`種別も保存し、schema・種別欠落・別種別を推測で補わず、復元前に不一致として拒否する。
 - `train_one_epoch`と`run_segment`は`accumulation_steps`を受け取り、本番entry pointが設定の比1/4/16を渡す。低水準CPU fixtureの既定値は1。scheduleのsteps_per_epochはmicrobatch数ではなくceil(train件数/実効batch)。全サンプルを一度ずつ使い、蓄積後の未clip勾配L2 normをFP64で集計して更新回数平均を取る。lossは画像数平均。非有限loss/gradient、欠損gradient、途中で終わるiteratorは完了epochとして保存しない。
 - `evaluate`は学習指標と別に実checkpointをFP32で評価する。全moduleのtrain/eval状態、乱数、autocast、TF32、matmul精度、deterministic flagsを例外時も復元する。CLIへの進捗通知も乱数を退避・復元し、通知の有無で学習列を変えない。
 - CPUテストは下位の`run_segment`へ小さなモデル・データ・3epoch schedule・FP32を明示して渡す。これは本番設定や比較条件を変更するCLI機能ではない。
@@ -819,7 +807,7 @@ artifacts/runs/<name>/b<batch>_seed<seed>/
 ## Resume identity and branch selection
 
 - 再開前に完了manifest、4ファイルのサイズ/hash、schema・epoch・step・metric identityを照合する。全config、split、初期重み、runtime/GPU条件、`src/`・`scripts/`のPythonソースhashが異なれば停止し、黙って継続しない。Git commit/dirty状態と個別ソースhashはenvironmentに記録する。
-- 今回の設定schema v3・勾配蓄積への変更は旧B64 runと互換の再開ではない。旧成果物は保持し、新しい確認runには`--name phase0_accum`等の別名を使う。初期モデルv2と共有splitは再利用する。scheduler状態v2、epoch成果物の外側のschema v1は維持する。新コード同士の再開でもmicrobatch/実効batch/蓄積条件を含むcontractが異なれば拒否する。
+- 再開元は、config、初期モデル、共有split、scheduler状態、microbatch、実効batch、蓄積回数を含むcontractが完全に一致する完成checkpointに限る。
 - 再開先は必ず新segment。親のepoch directory・epoch・完了manifest hashを`segment.json`に保存する。同じrun内の既存checkpointだけを親にできる。
 - 新しく作成したmodel/optimizerへ、modelのキー・順序・dtype・shape、AdamWのgroup・LR・moment・step、scheduleの全期間を確認して復元する。最後にloader generatorとPython・NumPy・CPU/CUDA RNGを復元してから、次epochのiteratorを作る。
 - `completed_lineage`は指定したsegmentの親をたどり、親の指定epochまでと子の後続だけを返す。完了manifestのないepochを除き、完了列の欠番・重複・循環・親の変化は拒否する。別branch・親の指定epoch以降の成果物は混ぜない。

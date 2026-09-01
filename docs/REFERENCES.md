@@ -4,13 +4,13 @@
 
 **D-03の確定範囲:** R05の第7.2節を基礎に、軌跡からPCAの上位2方向を選ぶ方法を採用します。複数runの共通化・平均原点・射影残差の保存・分割処理は今回の設計判断です。詳しくは[実験計画の射影仕様](EXPERIMENT_PLAN.md#92-projection)を参照してください。
 
-初回確認日: 2026-08-31。ConvNeXt V2資料の追加・更新: 2026-09-01。論文・公式実装を手法の確認に、解説記事を論点の整理に、可視化ツールを表示方法の参考に使います。GitHubのコードは参照時点の内容であり、利用する場合のcommit固定や動作検証は別途必要です。
+論文・公式実装を手法の確認に、解説記事を論点の整理に、可視化ツールを表示方法の参考に使います。GitHubのコードは参照時点の内容であり、利用する場合のcommit固定や動作検証は別途必要です。
 
 [ドキュメント案内に戻る](README.md)
 
 ## ユーザー提供資料
 
-番号は提供されたリンクの順序に対応します。先に掲載済みだった公式repositoryは既存ID（S10）を維持します。
+番号は提供されたリンクの順序に対応します。補足資料には別のIDを付けます。
 
 ### 可視化・最適化軌跡
 
@@ -59,10 +59,10 @@
 
 | ID | 資料 | 種別 | 参照する内容 |
 | --- | --- | --- | --- |
-| R19 | [ConvNeXt V2 論文解説：CNN のための Masked Autoencoder](https://zenn.dev/mantis_ryuji/articles/9628b8eef173d4) | 解説記事 | FCMAEとGRN、モデル構造と自己教師あり事前学習の関係を整理。技術的な採用判断はR20・S10と照合する。 |
+| R19 | [ConvNeXt V2 論文解説：CNN のための Masked Autoencoder](https://zenn.dev/mantis_ryuji/articles/9628b8eef173d4) | 解説記事 | FCMAEとGRN、モデル構造と自己教師あり事前学習の関係を整理。技術的な採用判断はR20・S09と照合する。 |
 | R20 | [ConvNeXt V2: Co-designing and Scaling ConvNets with Masked Autoencoders — Woo et al.](https://arxiv.org/abs/2301.00808) | 原論文 | ConvNeXt V2の構造、GRN、FCMAEの設計。モデル構造の採用と事前学習済み重みの利用を区別する。 |
 
-同時に指定されたConvNeXt V2公式repositoryは、下表のS10として掲載済み。URL・IDを重複させず、ユーザー提供資料としても扱う。
+ConvNeXt V2公式repositoryは下表のS09に掲載する。
 
 ## 補足した一次資料・参照箇所
 
@@ -75,23 +75,22 @@
 | S05 | [Model Soup公式実装: main.py](https://github.com/mlfoundations/model-soups/blob/main/main.py) | Greedy Soupがvalidation accuracyの厳密な改善を条件に採用する処理。 |
 | S06 | [mysimulator: Gradient Descent & Modern Optimisers](https://www.mysimulator.uk/articles/gradient-descent/) | R03が取得できなかった際の補助的な公式解説。 |
 | S07 | [CIFAR-10 and CIFAR-100 datasets](https://www.cs.toronto.edu/~kriz/cifar.html) | 元画像が32×32のカラー画像であること、件数、クラス構成。公式ページはcave.cs.toronto.eduへリダイレクト。 |
-| S08 | [timm/vit_small_patch16_224.dino — Model card](https://huggingface.co/timm/vit_small_patch16_224.dino) | 旧モデルの参照記録。2026-09-01に採用を撤回し、ConvNeXt V2へ変更。新実験の前提には使わない。 |
-| S09 | [Li et al.著者実装: projection.py](https://github.com/tomgoldstein/loss-landscape/blob/master/projection.py) | 軌跡行列からPCAの2方向を求める処理、寄与率の保存、最終モデルを基準とする射影を確認。D-03の共通平均原点・複数run共通化とは区別する。 |
-| S10 | [ConvNeXt V2公式repository](https://github.com/facebookresearch/ConvNeXt-V2) | 2026-09-01にユーザーからも指定。全フェーズ共通のモデル構造。Tinyと、FCMAEのみ／教師ありfine-tuning後の重みの区別を確認。 |
-| S11 | [timm/convnextv2_tiny.fcmae](https://huggingface.co/timm/convnextv2_tiny.fcmae) | Phase 3のModel Soup用候補。分類headを持たない純粋な自己教師ありFCMAE checkpoint。Phase 0・1・2では使わない。 |
-| S12 | [timm/convnextv2_tiny.fcmae_ft_in1k](https://huggingface.co/timm/convnextv2_tiny.fcmae_ft_in1k) | FCMAE後にImageNet-1kで教師ありfine-tuningした重み。S11と取り違えないための参照で、今回の純SSL初期値候補には採用しない。 |
-| S13 | [ConvNeXt V2公式main_finetune.py](https://github.com/facebookresearch/ConvNeXt-V2/blob/main/main_finetune.py) | 公式学習コードの既定optimizerはAdamW。CIFAR-10スクラッチ用のLR・epochが検証された資料ではない。 |
-| S14 | [ConvNeXt V2公式TRAINING.md](https://github.com/facebookresearch/ConvNeXt-V2/blob/main/TRAINING.md) | FCMAEのImageNet事前学習・fine-tuning手順。Tinyの300epoch例も事前学習checkpointを使うため、今回のCIFAR-10スクラッチレシピの検証根拠にはしない。 |
+| S08 | [Li et al.著者実装: projection.py](https://github.com/tomgoldstein/loss-landscape/blob/master/projection.py) | 軌跡行列からPCAの2方向を求める処理、寄与率の保存、最終モデルを基準とする射影を確認。D-03の共通平均原点・複数run共通化とは区別する。 |
+| S09 | [ConvNeXt V2公式repository](https://github.com/facebookresearch/ConvNeXt-V2) | 全フェーズ共通のモデル構造。Tinyと、FCMAEのみ／教師ありfine-tuning後の重みの区別を確認。 |
+| S10 | [timm/convnextv2_tiny.fcmae](https://huggingface.co/timm/convnextv2_tiny.fcmae) | Phase 3のModel Soup用候補。分類headを持たない純粋な自己教師ありFCMAE checkpoint。Phase 0・1・2では使わない。 |
+| S11 | [timm/convnextv2_tiny.fcmae_ft_in1k](https://huggingface.co/timm/convnextv2_tiny.fcmae_ft_in1k) | FCMAE後にImageNet-1kで教師ありfine-tuningした重み。S10と取り違えないための参照で、純SSL初期値候補には採用しない。 |
+| S12 | [ConvNeXt V2公式main_finetune.py](https://github.com/facebookresearch/ConvNeXt-V2/blob/main/main_finetune.py) | 公式学習コードの既定optimizerはAdamW。CIFAR-10スクラッチ用のLR・epochが検証された資料ではない。 |
+| S13 | [ConvNeXt V2公式TRAINING.md](https://github.com/facebookresearch/ConvNeXt-V2/blob/main/TRAINING.md) | FCMAEのImageNet事前学習・fine-tuning手順。Tinyの300epoch例も事前学習checkpointを使うため、CIFAR-10スクラッチレシピの検証根拠にはしない。 |
 
 ## 設計検討で区別すること
 
 D-05のAPI確認: [PyTorch 2.6 Reproducibility](https://docs.pytorch.org/docs/2.6/notes/randomness.html)、[PyTorch 2.6 DataLoader](https://docs.pytorch.org/docs/2.6/data.html)、[NumPy 2.1 eigh](https://numpy.org/doc/2.1/reference/generated/numpy.linalg.eigh.html)。分割Gram行列方式・FP64・保存完了手順は今回の設計判断であり、これらの資料が実験結果や処理速度を保証するものではない。
 
-- **初期化と実験の境界**: Phase 0・1・2はConvNeXt V2-Tinyをスクラッチ学習し、最後のModel SoupだけS11の共通SSL初期値からfine-tuningする。SWA/FGEやsharp minimaの着想を採用することと、著者実装のモデル・optimizer・条件を再現することは分ける。
-- **Optimizer**: 2026-09-01のユーザー指示でAdamWの維持を確定。[SWA著者実装](https://github.com/timgaripov/swa/blob/master/train.py)と[mode-connectivity著者実装](https://github.com/timgaripov/dnn-mode-connectivity/blob/master/train.py)のmomentum SGDとは条件が異なる。重み平均・周期LRの着想をConvNeXt V2とAdamWへ適用する実験として扱い、著者実験の再現とは呼ばない。
-- **固定LRの採用範囲**: ユーザー指定でPhase 0・1は100epoch・共通固定LR 1e-3、Model Soupは各runで固定LR 1e-4。どちらもwarmup・decayなし。R20・S13・S14がCIFAR-10での最適性や収束を保証しているわけではない。[実験計画4節](EXPERIMENT_PLAN.md#4-scratch-training-recipe)に採用理由と確認範囲を記録する。
-- **SWA/FGEの原設定と共通比較条件**: 原論文の代表的なCIFAR設定と、今回採用した80〜100epochの共通4epoch三角周期・同じ5点での平均比較は[実験計画7.3節](EXPERIMENT_PLAN.md#73-branches)に分けて記録する。SWAの約75%開始、FGEの約80%開始という説明を区別する。今回は80開始・4epoch周期をユーザー指定で両手法に共通化した比較であり、原実験の再現とは呼ばない。SWAに固定LR版があることは原論文の説明として残す。原論文のSGD用LRをAdamWの確定値として流用しない。
-- **元画像とモデル入力**: CIFAR-10の元画像は32×32、モデル入力は224×224を維持する。画素数は49倍だが、VRAMが単純に49倍になるという意味ではない。[旧B256測定](IMPLEMENTATION_SPEC.md#21-environment-check-2026-08-31)はDINO構造の参考記録で、ConvNeXt V2では再測定する。
+- **初期化と実験の境界**: Phase 0・1・2はConvNeXt V2-Tinyをスクラッチ学習し、最後のModel SoupだけS10の共通SSL初期値からfine-tuningする。SWA/FGEやsharp minimaの着想を採用することと、著者実装のモデル・optimizer・条件を再現することは分ける。
+- **Optimizer**: AdamWを使う。[SWA著者実装](https://github.com/timgaripov/swa/blob/master/train.py)と[mode-connectivity著者実装](https://github.com/timgaripov/dnn-mode-connectivity/blob/master/train.py)のmomentum SGDとは条件が異なる。重み平均・周期LRの着想をConvNeXt V2とAdamWへ適用する実験として扱い、著者実験の再現とは呼ばない。
+- **固定LRの採用範囲**: Phase 0・1は100epoch・共通固定LR 1e-3、Model Soupは各runで固定LR 1e-4。どちらもwarmup・decayなし。R20・S12・S13がCIFAR-10での最適性や収束を保証しているわけではない。[実験計画4節](EXPERIMENT_PLAN.md#4-scratch-training-recipe)に採用理由と確認範囲を記録する。
+- **SWA/FGEの原設定と共通比較条件**: 原論文の代表的なCIFAR設定と、本実験の80〜100epoch・共通4epoch三角周期・同じ5点での平均比較は[実験計画7.3節](EXPERIMENT_PLAN.md#73-branches)に分けて記録する。SWAの約75%開始、FGEの約80%開始という説明を区別し、原論文のSGD用LRをAdamWの確定値として流用しない。
+- **元画像とモデル入力**: CIFAR-10の元画像は32×32、モデル入力は224×224。画素数は49倍だが、VRAMが単純に49倍になるという意味ではない。実測条件は[環境とPhase 0検証](IMPLEMENTATION_SPEC.md#21-environment-and-phase-0-verification)に記録する。
 - **射影と実測**: PCA平面の背景損失と、平面外にも成分を持つ実モデルの損失を区別する。
 - **直線と曲線**: 線形補間に障壁があっても、低損失の曲線経路が存在しないとは言えない。
 - **重み平均と予測平均**: SWA / Soupの重み平均、FGEの確率平均、Model Soup論文のlogit ensembleを区別する。

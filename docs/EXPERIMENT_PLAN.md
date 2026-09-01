@@ -1,7 +1,5 @@
 # Experiment Plan: Optimization Dynamics, SWA/FGE, and Model Soup on CIFAR-10
 
-> **2026-09-01 方針転換** — 全フェーズでConvNeXt V2-Tinyを使用。Phase 0・1・2はスクラッチ、Phase 3のModel Soupのみ同一のSSL checkpointからfine-tuningします。旧DINO前提と成果物は撤回・削除済み。AdamW維持をユーザーが確定し、Phase 0・1の初期レシピを100epoch・固定LR 1e-3（warmupなし）へ変更しました。Phase 2は80〜100epochのSWA/FGE共通4epoch周期を5回、Phase 3は固定LR 1e-4を採用済み。記録・射影・両背景・GIF要件は維持。新モデルの実データ検証、Phase 2・3の残る詳細確定と実装はこれからです。
-
 [ドキュメント案内に戻る](README.md)
 
 ## 1. Research Goal
@@ -92,17 +90,17 @@ backbone・headともrun seedごとに初期化し直さない。Phase 3は純�
 
 # 4. Scratch Training Recipe
 
-2026-09-01、ユーザー指定によりAdamW・全期間100epoch・固定LR 1e-3をPhase 0・1へ採用する。warmup・cosine decay案は撤回する。SWA/FGE以外の実験では各run内のLRを固定し、Model Soupは別の固定値1e-4を使う。
+Phase 0・1はAdamW・全期間100epoch・固定LR 1e-3を使う。warmupとLR decayは行わない。SWA/FGE以外の実験では各run内のLRを固定し、Model Soupは別の固定値1e-4を使う。
 
 | 項目 | 設定 | 選定理由・制約 |
 | --- | --- | --- |
-| optimizer | AdamW | ユーザー指定。既存のbetas=(0.9, 0.999)、eps=1e-8、全parameterへの一様なweight decayを維持。 |
-| 全学習期間 | 100epoch | 記録数を抑えるユーザー指定。epoch 0と毎epoch終了時の101時点を全て記録する。収束の保証ではない。 |
-| learning rate | 1e-3固定 | ユーザー指定。初回から最終更新まで、全バッチで同じ値を使う。自動スケーリングやrun別調整をしない。 |
+| optimizer | AdamW | betas=(0.9, 0.999)、eps=1e-8、全parameterへweight decayを一様に適用する。 |
+| 全学習期間 | 100epoch | epoch 0と毎epoch終了時の101時点を全て記録する。収束の保証ではない。 |
+| learning rate | 1e-3固定 | 初回から最終更新まで、全バッチで同じ値を使う。自動スケーリングやrun別調整をしない。 |
 | scheduler / warmup | constant / 0epoch | 軌跡の時間変化からLR操作という要因を除く。最終更新のLRも1e-3。 |
-| weight decay | 0.05 | 既存値を維持し、モデル変更と同時に正則化の条件を追加変更しない。 |
+| weight decay | 0.05 | 全runで共通とする。 |
 
-100epoch・固定LR 1e-3は今回の観察目的に合わせたユーザー指定であり、CIFAR-10に対する最適性や収束は未検証。[公式TRAINING.md](https://github.com/facebookresearch/ConvNeXt-V2/blob/main/TRAINING.md)はImageNetでのFCMAE事前学習・fine-tuning手順なので、今回のスクラッチ学習の実証根拠とはしない。
+100epoch・固定LR 1e-3は軌跡観察のための実験条件であり、CIFAR-10に対する最適性や収束は未検証。[公式TRAINING.md](https://github.com/facebookresearch/ConvNeXt-V2/blob/main/TRAINING.md)はImageNetでのFCMAE事前学習・fine-tuning手順なので、このスクラッチ学習の実証根拠とはしない。
 
 維持する実装条件:
 
@@ -112,7 +110,7 @@ backbone・headともrun seedごとに初期化し直さない。Phase 3は純�
 - gradient clipping: disabled by default
 - deterministic validation
 
-このレシピで新しいPhase 0の成立性を確認し、本比較前に資源見積もりと設定を確認する。Phase 0は初回から固定LRでの5epochを試すが、100epochの安定性・収束や全バッチ条件の成立性までは保証しない。条件変更が必要なら本比較と区別して記録し、runごとの精度を見てLR等を調整しない。schedule・augmentation・再現性の詳細は[実装仕様22節](IMPLEMENTATION_SPEC.md#22-phase-0--1-operational-contract-d-05--d-06)に従う。ConvNeXt V2とAdamWへ手法を適用する探索実験であり、参考論文のモデル・optimizer・条件をそのまま再現した実験とは区別する。
+Phase 0でpipelineの成立性と資源を確認し、Phase 1で同じ学習条件を100epoch実行する。runごとの精度を見てLR等を調整しない。schedule・augmentation・再現性の詳細は[実装仕様22節](IMPLEMENTATION_SPEC.md#22-phase-0--1-operational-contract-d-05--d-06)に従う。ConvNeXt V2とAdamWへ手法を適用する探索実験であり、参考論文のモデル・optimizer・条件をそのまま再現した実験とは区別する。
 
 SOTA accuracy を目的としない。
 
@@ -162,7 +160,7 @@ SOTA accuracy を目的としない。
 
 ## 6.2 Conditions
 
-**D-01改訂（2026-09-01・ユーザー確定）:** 実効バッチをB64/B256/B1024へ変更し、全条件でmicrobatch 64、勾配蓄積1/4/16回を使う。旧B16/B64/B256案は撤回。モデルはConvNeXt V2-Tinyのスクラッチ学習、レシピは4節のAdamW・100epochを維持する。
+実効バッチはB64/B256/B1024、全条件でmicrobatch 64、勾配蓄積1/4/16回を使う。モデルはConvNeXt V2-Tinyをスクラッチ学習し、4節のAdamW・100epoch条件を適用する。
 
 Primary comparison:
 
@@ -190,7 +188,7 @@ Phase 1の最小版では、まずseed 0のB64/B256/B1024を完成させる。�
 
 GPUへ渡す枚数は共通にし、同じ重みで計算したmicrobatchの勾配を画像数で平均してからAdamWを1回更新する。train 45,000件を捨てずに使うため、各epochの最後の実効バッチはそれぞれ8/200/968件となる。端数も実画像数で平均し、次epochへ勾配を持ち越さない。LRの自動スケーリングはしない。
 
-B16を外して大きい側へ比較範囲を移す設計であり、B16が不要であることやB1024の収束を実証したわけではない。勾配蓄積と物理的な大バッチは、同じ入力・重みでの画像数平均という定義を共有するが、浮動小数点演算のbitwise一致は保証しない。今回のモデルはbatch統計を使うBatchNormを含まず、既定のdropout/drop pathは0。モデル・前処理・精度の条件は変更しない。
+この比較範囲だけで、小さいbatchが不要であることやB1024の収束を主張しない。勾配蓄積と物理的な大バッチは、同じ入力・重みでの画像数平均という定義を共有するが、浮動小数点演算のbitwise一致は保証しない。モデルはbatch統計を使うBatchNormを含まず、dropout/drop pathは0とする。
 
 共通条件はCIFAR-10、ConvNeXt V2-Tiny、224×224、全parameterのスクラッチ学習とする。分類headまで含む同一のスクラッチ初期checkpoint `theta_0`を全runで共有する。SWA、FGE、Model SoupはPhase 1の対象外とする。
 
@@ -215,7 +213,7 @@ Phase 1A の結果だけで gradient noise の因果効果を断定しない。
 
 ## 6.3 Checkpoint frequency
 
-**D-02の確定事項（2026-08-31）:** 記録は全期間1 epoch単位とする。
+記録は全期間1 epoch単位とする。
 
 - 共通初期状態 `theta_0`をepoch 0、optimizer step 0の起点として記録する。
 - 解析用checkpointと指標は、毎epoch終了時に記録する。初期だけ保存間隔を細かくすることはしない。
@@ -224,9 +222,9 @@ Phase 1A の結果だけで gradient noise の因果効果を断定しない。
 
 全期間E epochsのrunではepoch 0〜EのE+1時点、5 epochsのPhase 0ではepoch 0〜5の6時点となる。
 
-**保存容量の方針（D-05の一部確定、2026-08-31）:** 保存容量に設計上の上限を設けず、初期状態と毎epochの解析用checkpointをすべて保持する。容量節約を理由に記録を間引いたり既存成果物を自動削除したりしない。RAM・VRAMの制約に合わせた分割処理と、GIFの各ファイル3 MB以下という要件は維持する。
+保存容量に設計上の上限を設けず、初期状態と毎epochの解析用checkpointをすべて保持する。容量節約を理由に記録を間引いたり既存成果物を自動削除したりしない。RAM・VRAMの制約に合わせた分割処理と、GIFの各ファイル3 MB以下という要件を適用する。
 
-**保存・再開の方針（D-05の一部確定、2026-08-31）:** 解析用checkpointはFP32の`.pt`形式とする。再開用checkpointは別に毎epoch終了時に保存し、重み・optimizer・scheduler・使用する場合のscaler・乱数状態・データ順序の状態・完了epoch・累積optimizer更新回数・設定を保持する。最後に保存を完了したepochの次から再開し、中断したepochは先頭からやり直す。Phase 0も同じ方式とし、再開の再現性はユーザーによる実行で確認する。詳細は[保存仕様](IMPLEMENTATION_SPEC.md#7-checkpoint-format)を参照する。
+解析用checkpointはFP32の`.pt`形式とする。再開用checkpointは別に毎epoch終了時に保存し、重み・optimizer・scheduler・使用する場合のscaler・乱数状態・データ順序の状態・完了epoch・累積optimizer更新回数・設定を保持する。最後に保存を完了したepochの次から再開し、中断したepochは先頭からやり直す。詳細は[保存仕様](IMPLEMENTATION_SPEC.md#7-checkpoint-format)を参照する。
 
 設定構造・パス・PCAの計算方法・再開の詳細手順・予算の扱いはD-05で確定し、[実装仕様22節](IMPLEMENTATION_SPEC.md#22-phase-0--1-operational-contract-d-05--d-06)へ記録した。
 
@@ -317,7 +315,7 @@ Phase 1のスクラッチ学習runを1つ選ぶ。外部SSL checkpointからのf
 - batch size = 64
 - seed = 0
 
-ユーザー指定により、epoch 80終了時の重み・AdamW状態・乱数状態を共通branch pointとする。epoch 81〜100の20epochで、4epoch周期を5回行う。Phase 1の100epochは変更しない。75開始・5epoch周期案は撤回する。
+epoch 80終了時の重み・AdamW状態・乱数状態を共通branch pointとする。epoch 81〜100の20epochで、4epoch周期を5回行う。
 
 \[
 \theta_{\mathrm{branch}}
@@ -335,7 +333,7 @@ Phase 1と同じ固定LR 1e-3を継続し、SWA/FGEと同じ開始・終了epoch
 
 ### SWA
 
-FGEと同じ周期LRの軌跡から採取した5点の重みを等重み平均する。ユーザー指示により、従来の固定LR・毎epoch平均案を撤回し、LRと採取時点をFGEに揃える。原論文の設定と今回の採用条件は後述のとおり区別する。
+FGEと同じ周期LRの軌跡から採取した5点の重みを等重み平均する。LRと採取時点をFGEに揃え、平均方法だけを比較する。原論文の設定と本実験の条件は後述のとおり区別する。
 
 採用条件（未実装）:
 
@@ -380,7 +378,7 @@ FGEは通常学習の約80%地点から開始する説明だが、実験の分�
 
 著者のCIFAR実装はmomentum 0.9のSGDを使う。論文のLRをAdamWへそのまま移植する根拠はない。モデル・optimizer・通常学習のscheduleも今回と異なるため、以下は今回の比較用の採用条件であり、原実験の再現条件とは呼ばない。SWAの約75%開始は代表的な実験設定であって、常にepoch 75で開始するという手法の要件ではない。
 
-**今回の共通条件（ユーザー採用・未実装）:** epoch 80終了時の同じ重み・AdamW・RNGから分岐し、epoch 100終了まで比較する。B64・seed 0を既定候補とする。
+**共通条件（未実装）:** epoch 80終了時の同じ重み・AdamW・RNGから分岐し、epoch 100終了まで比較する。B64・seed 0を既定候補とする。
 
 - Normal：固定LR 1e-3で同じ20epochを比較する。
 - SWA/FGE共通学習：最大1e-3・最小1e-5、4epochの三角周期を5回。前半2epochで低下、後半2epochで上昇させ、epoch 100終了で5周期を完了する。
@@ -462,7 +460,7 @@ FGEではprediction ensembleとweight averageを必ず分ける。主要な平�
 
 ここから初めてSSL事前学習済み重みを使う。共通モデルはConvNeXt V2-Tiny、初期checkpointは教師ありfine-tuning前の`convnextv2_tiny.fcmae`を候補とする。これは`fcmae_ft_in1k`等の教師ありfine-tuning済み重みとは異なる。[モデルカード](https://huggingface.co/timm/convnextv2_tiny.fcmae)
 
-同一FCMAE backboneと同一の10-class headを保存し、全候補runがその完全な初期stateからCIFAR-10へfine-tuningする。Phase 1・2のスクラッチ学習済み重みはSoup候補として再利用しない。ユーザー指定により、各runはAdamW・固定LR 1e-4・warmupなし・LR decayなしを基本とする。初期値・run・projectionの識別をスクラッチ系列と分離する。取得・変換・head初期化・epoch・weight decay等の残る条件はU-01で確定し、Phase 0・1のCLIへ先行実装しない。
+同一FCMAE backboneと同一の10-class headを保存し、全候補runがその完全な初期stateからCIFAR-10へfine-tuningする。Phase 1・2のスクラッチ学習済み重みはSoup候補として再利用しない。各runはAdamW・固定LR 1e-4・warmupなし・LR decayなしを基本とする。初期値・run・projectionの識別をスクラッチ系列と分離する。取得・変換・head初期化・epoch・weight decay等の残る条件はU-01で確定し、Phase 0・1のCLIへ先行実装しない。
 
 ## 8.1 Core question
 
@@ -559,7 +557,7 @@ B_{ij}=\Delta(\theta_i,\theta_j)
 
 ### Phase 1
 
-**D-03の確定事項（2026-08-31）:** 比較対象runをまとめた中心化PCAを使い、共通平均を原点、上位2主成分を直交単位基底とする。
+比較対象runをまとめた中心化PCAを使い、共通平均を原点、上位2主成分を直交単位基底とする。
 
 対象は、最小版ではseed 0のB64/B256/B1024の3 runs、拡張版ではseed 0・1・2の全9 runsとする。各runのepoch 0と毎epoch終了時のcheckpointを使い、同じepoch範囲・間隔で揃える。共通の `theta_0`も各runの起点として含め、各run・epochの組を等重みで扱う。checkpointを100件以下へ間引くことはしない。
 
@@ -582,7 +580,7 @@ e_k = \|w_k-\mu-Vz_k\|_2
 
 計算はcheckpointの順次読み込み・分割処理で行い、全重みのRAM/GPU常駐を避ける。seed 1・2の追加時は全9 runsでPCAを再計算し、別の識別子で保存する。3 runs版と9 runs版の座標を混在させず、動画内では座標系を固定する。
 
-D-05では、ディスク上のFP32重みを16,384 parameterずつ読み、FP64で中心化Gram行列を累積・固有値分解する方式に決定した。100epoch・全9runで909時点になるため、旧65,536から読込ブロック幅だけを縮小し、RAMの作業領域を抑える。平均・基底・座標・残差もFP64で保存する。記録点を間引いたりIncrementalPCAへ変更したりしない。計算手順・数値検証・rank不足時の扱いは実装仕様22節を参照する。
+ディスク上のFP32重みを16,384 parameterずつ読み、FP64で中心化Gram行列を累積・固有値分解する。100epoch・全9runでは909時点を扱う。平均・基底・座標・残差もFP64で保存し、記録点の間引きやIncrementalPCAは使わない。計算手順・数値検証・rank不足時の扱いは実装仕様22節を参照する。
 
 **参考と今回の設計の区別:** 軌跡からPCAの上位2方向を選ぶ方法と寄与率の表示は、[Li et al.第7.2節・Figure 9（R05）](https://arxiv.org/pdf/1712.09913v3#page=10)を基礎とする。論文は最終checkpointとの差を並べてPCAを計算し、[著者実装](https://github.com/tomgoldstein/loss-landscape/blob/master/projection.py)は最終モデルを基準に軌跡を射影する。複数runをまとめること、共通平均を原点にすること、射影残差の保存、メモリ制約に合わせた分割処理は今回の比較向けの設計であり、原論文の実験をそのまま再現するものではない。
 
@@ -608,7 +606,7 @@ branch point以降のNormalとSWA/FGE共通のraw checkpointを使う案。共�
 
 を評価する。**Phase 1の原点はD-03で確定した共通平均 \(\mu\)** とし、parameter vector上の平面 \(\mu+a v_1+b v_2\)を使う。
 
-**D-04の確定事項（2026-08-31）:** train由来の背景を主表示とし、validation由来の背景も同じ座標系の別GIFとして作成する。以下の評価条件はPhase 1と、その基盤を確認するPhase 0に適用する。後段の評価条件は引き続きDraftとする。
+train由来の背景を主表示とし、validation由来の背景も同じ座標系の別GIFとして作成する。以下の評価条件はPhase 1と、その基盤を確認するPhase 0に適用する。後段の評価条件はDraftとする。
 
 ### Landscape subset
 
