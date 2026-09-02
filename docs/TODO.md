@@ -8,7 +8,7 @@
 
 更新日: 2026-09-02
 
-**現在地:** Phase 0とV-01〜V-05は完了しました。**M-01としてseed 0のB64/B256/B1024を各100epoch実行します。** Phase 0の大容量成果物は保持対象外であり、以後の確認対象やPhase 1の入力には含めません。
+**現在地:** Phase 0とV-01〜V-05は完了しました。M-01のseed 0・B64/B256/B1024各100epoch学習も完了しています。次はrepo全体を`D:\LossLandscape`へ安全に複製し、D:側を新しい作業repoとして確認してから、共通PCA・両背景の損失平面・GIFを作成します。Phase 0の大容量成果物は保持対象外であり、以後の確認対象やPhase 1の入力には含めません。
 
 [ドキュメント案内](README.md) / [実験計画](EXPERIMENT_PLAN.md) / [実装仕様案](IMPLEMENTATION_SPEC.md) / [参考文献](REFERENCES.md)
 
@@ -47,7 +47,7 @@
 | D-03: メモリ | **確定:** 全checkpointの重みをRAM/GPUに常駐させず、順次読み込み・分割処理する。checkpoint数を間引かない。 | ディスク上FP32行列、16,384 parameter/block、FP64のGram固有値分解を使う。ピークRAM・時間はユーザーが実測する。 |
 | D-04: 背景損失 | **確定:** train主表示とvalidation補助版の2種類を用意する。各splitから固定1,000件（各クラス100件）を抽出し、共通のPCA座標・21×21格子・色尺度で別GIFにする。 | モデル指定の評価用前処理とFP32を使い、AMP・TF32は無効。実checkpointは同じtrain subsetとvalidation全体で評価する。背景のsubset・平面上の損失と、実モデルの指標を表示で区別する。 |
 | D-05: 保存・再開 | **確定:** 解析用はFP32の`.pt`。毎epochの学習・乱数・データ順序を保存し、完了manifestのあるepochの次から再開する。 | workerをepochごとに再作成し、評価の乱数を隔離。contractが一致する完成checkpointだけを親にできる。 |
-| D-05: 設定・パス | **確定:** 階層型YAMLとfrozen dataclass、設定schema v3。初期値は`artifacts/init/convnextv2_tiny_scratch/theta_0.pt`を使う。 | 実効batchとmicrobatchを明示。loss/accuracyは画像数平均、gradient normは蓄積後のAdamW更新回数平均。 |
+| D-05: 設定・パス | **確定:** 階層型YAMLとfrozen dataclass、設定schema v3。repo全体を`D:\LossLandscape`へ移し、通常の相対パス設定でdataset・共通初期値・成果物・PCA作業領域をD:配下へ置く。 | 既存runに保存したC:絶対パスは来歴として保持する。移設先では絶対配置を実験identityから除外し、初期重みのSHA-256とその他の実験契約を照合する。 |
 | D-05: 予算 | **確定:** 保存容量上限・自動削除・壁時計時間の自動打ち切りを設けない。RAM・VRAM制約は維持する。 | Phase 0は6時点。Phase 1は101時点/run、最小3runで303・全9runで909時点。学習・評価・保存・PCA・格子・描画を分けて測る。 |
 | D-05: 完了条件 | **確定:** 学習・記録・共通座標・両背景の動画の成立で判定。 | batch間の差・精度改善・高い寄与率は必須にしない。補間評価はPhase 2準備に分離。低い寄与率は表示と解釈の制限として残す。 |
 
@@ -96,7 +96,7 @@ I-06の設定schema v3の実行記録（全件`created_artifacts: false`）:
 - [x] V-01: [landscape.py](../src/landscape_exp/landscape.py)に重みのベクトル化・復元と、theta_0のparameter順序・shape・dtype・spec hash・buffer不変条件の照合を実装。
 - [x] V-02: [projection.py](../src/landscape_exp/projection.py)と[compute_projection.py](../scripts/compute_projection.py)に、lineage解決、成果物hash検証、FP64 blocked Gram PCA、座標・寄与率・射影残差、immutable保存を実装。Phase 0の18点で有効rank 15、PC1/PC2寄与率69.2020%/10.7069%を確認。
 - [x] V-03: [loss_surface.py](../src/landscape_exp/loss_surface.py)と[compute_loss_surfaces.py](../scripts/compute_loss_surfaces.py)に、完成projectionの検証、共通21×21格子、train/validation固定subset各1,000件のFP32評価、共通色尺度、immutable保存を実装。Phase 0で両背景441点と元checkpoint指標を確認。
-- [x] V-04: [animation.py](../src/landscape_exp/animation.py)と[render_animation.py](../scripts/render_animation.py)に、完成projection/surfaceの検証、全epoch frame、実測指標、射影残差、圧縮fallback、各3,000,000 bytes上限、immutable保存を実装。現在のCPU test suite全86件がユーザー実行で成功。
+- [x] V-04: [animation.py](../src/landscape_exp/animation.py)と[render_animation.py](../scripts/render_animation.py)に、完成projection/surfaceの検証、全epoch frame、実測指標、射影残差、圧縮fallback、各3,000,000 bytes上限、immutable保存を実装。移設対応追加前のCPU test suite全86件がユーザー実行で成功。
 - [x] V-05: Phase 0の18 checkpointからtrain/validation背景のGIFペアを生成。6 frame・960×640・128色で、manifestのsize/hash、共通座標・色尺度、保存済み成果物からの再描画、線幅と3本の識別性を確認。
 
 完了条件: 保存済みの座標・格子・指標だけで動画を再生成でき、背景損失と実測損失の意味が表示から区別できる。
@@ -107,7 +107,19 @@ I-06の設定schema v3の実行記録（全件`created_artifacts: false`）:
 
 - [ ] M-01: 共通`theta_0`からseed 0のB64/B256/B1024（microbatch 64・accum 1/4/16）を実行し、同じ時間軸・共通座標で比較するtrain背景の主動画とvalidation背景の補助動画を完成させる。
 - [ ] M-02: ログ、保存間隔、学習条件、射影残差、動画表示を点検し、最小版の完了を確認。
-- [ ] M-03: seed 1・2を追加して全9 runsを揃え、共通PCAを再計算。seedごとの動画と全runのsummary動画をtrain背景・validation背景の両方で作成し、条件別の評価表とともに保存。
+- [ ] M-03: D:側の`configs/phase1.yaml`でseed 1・2を追加して全9 runsを揃え、共通PCAを再計算。seedごとの動画と全runのsummary動画をtrain背景・validation背景の両方で作成し、条件別の評価表とともに保存。
+
+M-01の学習部分は完了済みです。対象segmentは次の3本で、各101時点・CSV 101行、checkpointの欠落・size不一致・identity不一致はありません。合計サイズは約125.32 GiBです。
+
+| run | segment ID | 最終optimizer step | 最終validation accuracy |
+| --- | --- | ---: | ---: |
+| B64 / seed 0 | `20260901T145535527738Z_9267847eb7824937a315ec7d9b8aaa8e` | 70,400 | 0.9202 |
+| B256 / seed 0 | `20260901T204835413455Z_720286048a0b4cb9b5d9365ad7f49978` | 17,600 | 0.9386 |
+| B1024 / seed 0 | `20260902T062841348044Z_0432ed683bff4909bcd5f77fc4a1634e` | 4,400 | 0.9314 |
+
+保存容量の都合から、M-01の残りは[ルートREADMEの完全移行手順](../README.md#repo全体をdへ完全移行)でrepo全体の複製・照合とD:側への作業切替を完了してから、通常の`configs/phase1.yaml`を使って実行します。D:側のprojectionが`projection_ready`になるまではC:側のrepoを削除しません。
+
+完全移行のため、射影の互換性判定から絶対配置だけを除外し、その他の実験契約と初期重みSHA-256を維持する変更およびCPU test 1件を追加しました。現在の全87件はユーザー実行前です。
 
 最小版の完了条件: seed 0の3バッチ比較動画（train背景の主版・validation背景の補助版）と、その元となる設定・checkpoint・実測ログが揃う。
 

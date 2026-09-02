@@ -417,10 +417,17 @@ def _compatibility_record(config: Mapping[str, object]) -> dict[str, object]:
     experiment.pop("name", None)
     experiment.pop("seed", None)
     training.pop("batch_size", None)
+    if any(not isinstance(paths.get(name), str) for name in (
+        "dataset_root", "output_root", "init_checkpoint", "scratch_root",
+    )):
+        raise ValueError("Run configuration lacks the projection path schema")
     return {
         "schema_version": config.get("schema_version"),
         "experiment": experiment,
-        "paths": {"dataset_root": paths.get("dataset_root"), "init_checkpoint": paths.get("init_checkpoint")},
+        # Absolute paths describe deployment, not experiment identity. A moved
+        # run remains compatible; the initial checkpoint content is verified
+        # below by SHA-256 and the selected dataset/split is validated when the
+        # loss surface is evaluated.
         "model": config.get("model"),
         "training_except_effective_batch": training,
         "augmentation": config.get("augmentation"),

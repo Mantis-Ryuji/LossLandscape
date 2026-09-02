@@ -1,6 +1,6 @@
 # Implementation Specification for Codex
 
-> **現在地** — Phase 0と可視化pipelineの実行確認は完了しています。現在はM-01として、seed 0のB64/B256/B1024を各100epoch実行します。
+> **現在地** — Phase 0と可視化pipelineの実行確認、およびM-01のseed 0・B64/B256/B1024各100epoch学習は完了しています。次はrepo全体をD:へ複製・照合して作業repoを切り替えてから、共通PCA、両背景の損失平面、GIFを作成します。
 
 [ドキュメント案内に戻る](README.md)
 
@@ -8,7 +8,7 @@
 
 Phase 0・1についてはスクラッチ初期化・記録・評価・固定LR 1e-3の契約を定める。Phase 2のSWA/FGEはepoch 80終了時から100まで、共通の4epoch三角周期を5回、同じ最低LRの5点での平均比較を採用。Phase 3のModel Soupは固定LR 1e-4を採用済み。Phase 2・3の残る詳細・実装はDraftとして残す。保存容量の上限は設けず、解析用はFP32の`.pt`、再開用は毎epochの学習状態を保持する。詳細な設定・再開手順・PCA・完了条件は22節を正とする。設計の確定は実装・実行の完了を意味しない。
 
-Phase 1は、まずseed 0のB64/B256/B1024比較動画を完成させ、その後seed 1・2を追加する。共通条件とPhase 0で検証する学習条件は[実験計画のD-01](EXPERIMENT_PLAN.md#62-conditions)に従う。SWA/FGE/Model SoupはPhase 1の実装対象に含めない。
+Phase 1は、seed 0のB64/B256/B1024各100epoch学習まで完了している。次にrepo全体をD:へ複製・照合して作業repoを切り替え、比較動画を完成させた後にseed 1・2を追加する。共通条件とPhase 0で検証する学習条件は[実験計画のD-01](EXPERIMENT_PLAN.md#62-conditions)に従う。SWA/FGE/Model SoupはPhase 1の実装対象に含めない。
 
 目的はCIFAR-10とConvNeXt V2-Tinyを用いて、スクラッチの最適化軌跡、SWA/FGE、最後にSSL初期値からのModel Soupを観察するpipelineを構築すること。Phase 1・2のcheckpointをPhase 3のSoup候補へ流用しない。
 
@@ -688,12 +688,13 @@ Phase 0・1はConvNeXt V2-Tinyをスクラッチ初期化し、AdamW・全期間
 
 - 設定schema v3はYAMLの階層とfrozen dataclassの階層を一致させる。model.initialization、全体のinit_seed、training.microbatch_sizeを明示し、全項目を必須とする。schema v3以外、暗黙の設定継承、Phase 2・3の未使用項目は受け付けない。初期モデルはschema v2を使う。
 - `training.batch_size`と`--batch-size`は実効バッチ64/256/1024、`training.microbatch_size`は64固定。`Training.accumulation_steps`は両者の比から導出し、独立したYAML項目やCLI引数を設けない。設定確認の出力とrun/segmentのenvironment、再開contractの`batching`へ実効batch・microbatch・蓄積回数・epoch更新数を記録する。
-- `configs/phase0.yaml`はB64・seed 0、`phase1.yaml`は共通条件のテンプレート。batch・seed・実験名だけCLIで上書きでき、上書き後の全設定も保存する。異なるrunのLR等をCLIから個別変更する仕組みは設けない。
+- `configs/phase0.yaml`はB64・seed 0、`phase1.yaml`は共通条件のテンプレート。project root基準の相対パスを使うため、repo全体を`D:\LossLandscape`へ移設した後も同じ設定を使う。batch・seed・実験名だけCLIで上書きでき、上書き後の全設定も保存する。異なるrunのLR等をCLIから個別変更する仕組みは設けない。
 - Phase 0はseed 0・5epoch停止を固定したまま、実効B64/B256/B1024を許可する。B64はpipeline全体の基本sanity、B256/B1024はaccum 4/16のGPU probeである。probeには`phase0_accum_probe`という別の実験名を使い、Phase 1の100epoch本比較と混同しない。その他のbatch、seed 1/2、停止epochの変更は拒否する。
 - `experiment.name`は実験系列名。run_idは`<name>/b<batch>_seed<seed>`。名前には英小文字・数字・`_`・`-`のみを許可し、パス区切り・Windows予約名を拒否する。
 - 相対パスは実行時cwdやYAMLの親ではなく、明示したproject root基準。省略時はコードのあるリポジトリルート。`~`・環境変数の展開はしない。成果物をraw data配下へ配置しない。
 - I-01の`check_config.py`は既定で読み取りだけ。`--prepare-run`を明示したときだけ新規runの`source.yaml`・`config.json`・`prepared.json`を保存する。既存runには書き込まずエラー。途中失敗のファイルは自動削除しない。
 - `config.json`には解決済み絶対パスを含む全設定、`prepared.json`には元YAMLと有効設定のSHA-256、schema version、source pathを記録する。設定の確認はデータ・モデル・GPU・依存ライブラリの動作確認を意味しない。
+- repo移設時は既存`config.json`のC:絶対パスを来歴として保持し、保存済みfileを変更しない。射影のrun互換性では4つの絶対pathを配置情報として比較対象から除外する一方、path schema自体、学習条件、runtime、数値設定、前処理、source、checkpoint contractを照合する。移設先の共通初期checkpointは本体のSHA-256を各epochの宣言値と比較する。損失平面では移設先datasetと保存済みsplit/subsetも通常の検証を通す。
 - 学習開始時に新規`environment.json`へPython・依存version・device・dtype・解決済み前処理・Git commitとdirty状態・ソースの識別情報を記録する。未コミットならcommit hashだけで再現可能とは扱わない。
 - split・subsetのindexは`.npz`とJSON metadata、射影の平均・基底・座標・残差はFP64の`.npy` / `.npz`とJSON、格子は`.npz`とJSON、学習状態は`.pt`に分離する。object配列は使わない。
 - projection_idは`<実験名>_<比較範囲>_<UTC時刻>_<UUID>`とし、対象run・epoch・checkpointの順序をmanifestに固定する。loss surfaceは同じprojection_id配下で管理する。GIFは再描画をimmutableに残せるよう`<出力名>_<UTC時刻>_<UUID>`のanimation_id配下へ保存し、source projection_idとそのmanifest hashをmetadataに固定する。別projectionの座標を混ぜない。

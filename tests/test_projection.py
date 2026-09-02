@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import sys
 import tempfile
 import unittest
@@ -15,7 +16,11 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
 from landscape_exp.checkpoints import file_hash, write_json
-from landscape_exp.projection import compute_blocked_pca, load_analysis_checkpoint
+from landscape_exp.projection import (
+    _compatibility_record,
+    compute_blocked_pca,
+    load_analysis_checkpoint,
+)
 
 
 class ProjectionTests(unittest.TestCase):
@@ -72,6 +77,41 @@ class ProjectionTests(unittest.TestCase):
             rtol=1e-11,
             atol=1e-11,
         )
+
+    def test_projection_compatibility_ignores_absolute_storage_paths(self) -> None:
+        original = {
+            "schema_version": 3,
+            "experiment": {"name": "phase1", "phase": "phase1", "seed": 0},
+            "paths": {
+                "dataset_root": "C:/workspace/data",
+                "output_root": "C:/workspace/artifacts",
+                "init_checkpoint": "C:/workspace/artifacts/init/theta_0.pt",
+                "scratch_root": "C:/workspace/artifacts/work",
+            },
+            "model": {"name": "fixture"},
+            "training": {"batch_size": 64, "learning_rate": 1.0e-3},
+            "augmentation": {"horizontal_flip": True},
+            "split": {"split_seed": 1},
+            "reproducibility": {"deterministic_algorithms": True},
+            "evaluation": {"dtype": "float32"},
+            "checkpoint": {"parameter_dtype": "float32"},
+            "projection": {"solver": "gram_eigh"},
+            "landscape": {"grid_size": 21},
+            "logging": {"format": "csv"},
+            "phase1": {"same_learning_rate": True},
+        }
+        relocated = copy.deepcopy(original)
+        relocated["paths"] = {
+            "dataset_root": "D:/LossLandscape/data",
+            "output_root": "D:/LossLandscape/artifacts",
+            "init_checkpoint": "D:/LossLandscape/artifacts/init/theta_0.pt",
+            "scratch_root": "D:/LossLandscape/artifacts/work",
+        }
+        self.assertEqual(_compatibility_record(original), _compatibility_record(relocated))
+
+        changed_recipe = copy.deepcopy(relocated)
+        changed_recipe["training"] = {"batch_size": 64, "learning_rate": 2.0e-3}
+        self.assertNotEqual(_compatibility_record(original), _compatibility_record(changed_recipe))
 
     def test_rank_one_and_existing_outputs_are_rejected(self) -> None:
         rank_one = np.arange(15, dtype=np.float32).reshape(5, 3)
