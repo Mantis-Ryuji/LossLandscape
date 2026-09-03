@@ -39,6 +39,13 @@ class AnimationTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.config_source = self.root / "phase1.yaml"
         self.config_source.write_bytes((REPOSITORY_ROOT / "configs/phase1.yaml").read_bytes())
+        for relative in (
+            Path("src/landscape_exp/animation.py"),
+            Path("scripts/render_animation.py"),
+        ):
+            destination = self.root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes((REPOSITORY_ROOT / relative).read_bytes())
         self.loaded = load_config(self.config_source, project_root=self.root)
         self.output = self.root / "artifacts"
         (self.output / "projections").mkdir(parents=True)
