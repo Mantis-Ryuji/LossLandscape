@@ -9,7 +9,7 @@ import shutil
 import sys
 import tempfile
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping, Sequence, cast
@@ -125,6 +125,10 @@ class AnimationResult:
     colors: int
     train_size_bytes: int
     validation_size_bytes: int
+    selection_kind: str
+    selected_seed: int | None
+    source_run_count: int
+    rendered_run_count: int
 
 
 def _notify(callback: ProgressCallback | None, **values: object) -> None:
@@ -507,6 +511,18 @@ def load_animation_inputs(output_root: Path, projection_directory: Path) -> Anim
     )
 
 
+def _select_runs(inputs: AnimationInputs, seed: int | None) -> AnimationInputs:
+    """Select a rendering view only after every source run has been validated."""
+    if seed is None:
+        return inputs
+    if type(seed) is not int or seed < 0:
+        raise ValueError("animation seed must be a non-negative integer")
+    runs = tuple(run for run in inputs.runs if run.seed == seed)
+    if not runs:
+        raise ValueError(f"Projection contains no runs for seed {seed}")
+    return replace(inputs, runs=runs)
+
+
 def _format_number(value: object, *, scientific: bool = False) -> str:
     if value is None:
         return "N/A"
@@ -853,6 +869,7 @@ def render_animation_pair(
     projection_directory: Path,
     *,
     animation_name: str,
+    seed: int | None = None,
     progress: ProgressCallback | None = None,
 ) -> AnimationResult:
     """Render the train/validation GIF pair without loading data, models, or checkpoints."""
@@ -860,13 +877,21 @@ def render_animation_pair(
     projection_path = projection_directory
     if not projection_path.is_absolute():
         projection_path = loaded.project_root / projection_path
-    inputs = load_animation_inputs(loaded.config.paths.output_root, projection_path)
+    source_inputs = load_animation_inputs(loaded.config.paths.output_root, projection_path)
     if (
-        inputs.projection.metadata.get("config_source_sha256") != loaded.source_sha256
-        or inputs.projection.metadata.get("effective_config_sha256") != loaded.effective_sha256
+        source_inputs.projection.metadata.get("config_source_sha256") != loaded.source_sha256
+        or source_inputs.projection.metadata.get("effective_config_sha256") != loaded.effective_sha256
     ):
         raise ValueError("Projection configuration differs from this rendering request")
+    inputs = _select_runs(source_inputs, seed)
     projection_id = inputs.projection.directory.name
+    selection_kind = "all_runs" if seed is None else "seed"
+    run_selection = {
+        "kind": selection_kind,
+        "seed": seed,
+        "source_run_count": len(source_inputs.runs),
+        "rendered_run_count": len(inputs.runs),
+    }
     animation_id = _new_animation_id(animation_name)
     destination = _animation_destination(
         loaded.config.paths.output_root, animation_id, create=False,
@@ -967,6 +992,7 @@ def render_animation_pair(
         "animation_id": animation_id,
         "projection_id": projection_id,
         "animation_name": animation_name,
+        "run_selection": run_selection,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "config_source": str(loaded.source_path),
         "config_source_sha256": loaded.source_sha256,
@@ -1085,4 +1111,8 @@ def render_animation_pair(
         colors=colors,
         train_size_bytes=train_size,
         validation_size_bytes=validation_size,
+        selection_kind=selection_kind,
+        selected_seed=seed,
+        source_run_count=len(source_inputs.runs),
+        rendered_run_count=len(inputs.runs),
     )

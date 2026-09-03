@@ -25,6 +25,11 @@ def main() -> int:
         required=True,
         help="Lowercase output stem; produces <name>.gif and <name>_val.gif",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        help="Render only runs with this seed; omit to render every run in the projection",
+    )
     args = parser.parse_args()
     try:
         loaded = load_config(args.config, project_root=args.project_root)
@@ -41,6 +46,7 @@ def main() -> int:
             loaded,
             args.projection,
             animation_name=args.name,
+            seed=args.seed,
             progress=report,
         )
         print(json.dumps({
@@ -56,6 +62,12 @@ def main() -> int:
             "colors": result.colors,
             "train_size_bytes": result.train_size_bytes,
             "validation_size_bytes": result.validation_size_bytes,
+            "run_selection": {
+                "kind": result.selection_kind,
+                "seed": result.selected_seed,
+                "source_run_count": result.source_run_count,
+                "rendered_run_count": result.rendered_run_count,
+            },
             "max_size_bytes": 3_000_000,
             "model_evaluation_performed": False,
         }, ensure_ascii=False, allow_nan=False), flush=True)

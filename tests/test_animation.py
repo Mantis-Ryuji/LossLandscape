@@ -21,12 +21,15 @@ from landscape_exp.animation import (
     _FrameRenderer,
     _new_animation_id,
     _save_gif,
+    _select_runs,
     _styles,
     _trajectory_dimensions,
     _validate_animation_name,
     load_animation_inputs,
+    render_animation_pair,
 )
 from landscape_exp.checkpoints import file_hash, read_json, write_json
+from landscape_exp.config import load_config
 
 
 class AnimationTests(unittest.TestCase):
@@ -34,6 +37,9 @@ class AnimationTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
+        self.config_source = self.root / "phase1.yaml"
+        self.config_source.write_bytes((REPOSITORY_ROOT / "configs/phase1.yaml").read_bytes())
+        self.loaded = load_config(self.config_source, project_root=self.root)
         self.output = self.root / "artifacts"
         (self.output / "projections").mkdir(parents=True)
         (self.output / "surfaces").mkdir()
@@ -41,14 +47,16 @@ class AnimationTests(unittest.TestCase):
         self.surface = self._surface_fixture("fixture_projection")
 
     @staticmethod
-    def _metrics(run_id: str, segment_id: str, batch: int, epoch: int) -> dict[str, object]:
+    def _metrics(
+        run_id: str, segment_id: str, batch: int, seed: int, epoch: int,
+    ) -> dict[str, object]:
         return {
             "run_id": run_id,
             "segment_id": segment_id,
             "epoch": epoch,
-            "global_step": epoch * (8 if batch == 64 else 2),
+            "global_step": epoch * {64: 8, 256: 2, 1024: 1}[batch],
             "batch_size": batch,
-            "seed": 0,
+            "seed": seed,
             "learning_rate": None if epoch == 0 else 1e-3,
             "gradient_norm": None if epoch == 0 else 2.0 / epoch,
             "train_subset_loss": 2.4 - 0.2 * epoch - batch / 4096,
@@ -61,12 +69,9 @@ class AnimationTests(unittest.TestCase):
 
     def _records(self) -> list[dict[str, object]]:
         records: list[dict[str, object]] = []
-        for run_id, segment_id, batch in (
-            ("fixture/b64_seed0", "segment_64", 64),
-            ("fixture/b256_seed0", "segment_256", 256),
-        ):
+        for run_id, segment_id, batch, seed in self._run_specs():
             for epoch in range(3):
-                metrics = self._metrics(run_id, segment_id, batch, epoch)
+                metrics = self._metrics(run_id, segment_id, batch, seed, epoch)
                 records.append({
                     "index": len(records),
                     "run_id": run_id,
@@ -76,6 +81,19 @@ class AnimationTests(unittest.TestCase):
                     "metrics": metrics,
                 })
         return records
+
+    @staticmethod
+    def _run_specs() -> list[tuple[str, str, int, int]]:
+        return [
+            (
+                f"fixture/b{batch}_seed{seed}",
+                f"segment_{batch}_seed{seed}",
+                batch,
+                seed,
+            )
+            for seed in range(3)
+            for batch in (64, 256, 1024)
+        ]
 
     @staticmethod
     def _save_arrays(directory: Path, arrays: dict[str, np.ndarray]) -> None:
@@ -100,16 +118,27 @@ class AnimationTests(unittest.TestCase):
     def _projection_fixture(self, name: str) -> Path:
         directory = self.output / "projections" / name
         directory.mkdir()
+        coordinates = np.array([
+            point
+            for run_index, _ in enumerate(self._run_specs())
+            for point in (
+                [-1.0, 0.0],
+                [-0.3 + 0.04 * run_index, 0.45 - 0.06 * run_index],
+                [0.45 + 0.04 * run_index, 0.75 - 0.10 * run_index],
+            )
+        ], dtype=np.float64)
+        residuals = np.array([
+            value
+            for run_index, _ in enumerate(self._run_specs())
+            for value in (0.0, 0.1 + 0.01 * run_index, 0.2 + 0.01 * run_index)
+        ], dtype=np.float64)
         arrays = {
             "mean": np.arange(4, dtype=np.float64),
             "pc1": np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64),
             "pc2": np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float64),
-            "coordinates": np.array([
-                [-1.0, 0.0], [0.0, 0.6], [1.0, 0.9],
-                [-1.0, 0.0], [-0.2, -0.4], [0.6, -0.8],
-            ], dtype=np.float64),
-            "residuals": np.array([0.0, 0.1, 0.2, 0.0, 0.15, 0.25], dtype=np.float64),
-            "eigenvalues": np.array([4.0, 2.0, 1.0, 0.5, 0.0, 0.0], dtype=np.float64),
+            "coordinates": coordinates,
+            "residuals": residuals,
+            "eigenvalues": np.linspace(4.0, 0.0, len(coordinates), dtype=np.float64),
             "explained_variance_ratio": np.array([0.5, 0.25], dtype=np.float64),
         }
         self._save_arrays(directory, arrays)
@@ -118,11 +147,11 @@ class AnimationTests(unittest.TestCase):
             "schema_version": 1,
             "kind": "common_pca_projection",
             "projection_id": name,
-            "config_source_sha256": "a" * 64,
-            "effective_config_sha256": "b" * 64,
+            "config_source_sha256": self.loaded.source_sha256,
+            "effective_config_sha256": self.loaded.effective_sha256,
             "sample_count": len(records),
             "parameter_count": 4,
-            "run_order": ["fixture/b64_seed0", "fixture/b256_seed0"],
+            "run_order": [run_id for run_id, _, _, _ in self._run_specs()],
             "common_epochs": [0, 1, 2],
             "checkpoints": records,
             "explained_variance_ratio": [0.5, 0.25],
@@ -164,8 +193,8 @@ class AnimationTests(unittest.TestCase):
             "schema_version": 1,
             "kind": "common_loss_surfaces",
             "projection_id": name,
-            "config_source_sha256": "a" * 64,
-            "effective_config_sha256": "b" * 64,
+            "config_source_sha256": self.loaded.source_sha256,
+            "effective_config_sha256": self.loaded.effective_sha256,
             "projection": {
                 "complete_sha256": file_hash(projection_complete),
                 "metadata_sha256": projection_manifest["metadata_sha256"],
@@ -201,20 +230,54 @@ class AnimationTests(unittest.TestCase):
     def test_completed_sources_build_common_epoch_run_trajectories(self) -> None:
         inputs = load_animation_inputs(self.output, self.projection)
         self.assertEqual(inputs.epochs, (0, 1, 2))
-        self.assertEqual([run.label for run in inputs.runs], ["B64 seed0", "B256 seed0"])
-        self.assertEqual([run.color for run in inputs.runs], ["#D55E00", "#56B4E9"])
+        self.assertEqual(len(inputs.runs), 9)
+        self.assertEqual(
+            [run.label for run in inputs.runs[:3]],
+            ["B64 seed0", "B256 seed0", "B1024 seed0"],
+        )
+        self.assertEqual(
+            [run.color for run in inputs.runs[:3]],
+            ["#D55E00", "#56B4E9", "#CC79A7"],
+        )
+        records = self._records()
         reversed_styles = _styles(
-            [*self._records()[3:], *self._records()[:3]],
+            [*records[3:6], *records[:3]],
             ["fixture/b256_seed0", "fixture/b64_seed0"],
         )
         self.assertEqual(reversed_styles["fixture/b64_seed0"][0], "#D55E00")
         self.assertEqual(reversed_styles["fixture/b256_seed0"][0], "#56B4E9")
-        self.assertEqual([run.coordinates.shape for run in inputs.runs], [(3, 2), (3, 2)])
+        self.assertEqual([run.coordinates.shape for run in inputs.runs], [(3, 2)] * 9)
         self.assertEqual(inputs.explained_variance_ratio, (0.5, 0.25))
         self.assertEqual(inputs.train_metric_samples, 1000)
         self.assertEqual(inputs.validation_metric_samples, 5000)
         self.assertNotIsInstance(inputs.color_levels, np.memmap)
         self.assertNotIsInstance(inputs.runs[0].coordinates, np.memmap)
+
+    def test_seed_selection_preserves_shared_inputs_and_global_styles(self) -> None:
+        inputs = load_animation_inputs(self.output, self.projection)
+        self.assertIs(_select_runs(inputs, None), inputs)
+
+        selected = _select_runs(inputs, 1)
+        self.assertEqual(
+            [run.label for run in selected.runs],
+            ["B64 seed1", "B256 seed1", "B1024 seed1"],
+        )
+        self.assertEqual([run.line_style for run in selected.runs], ["--"] * 3)
+        self.assertEqual([run.marker for run in selected.runs], ["s"] * 3)
+        self.assertIs(selected.x_values, inputs.x_values)
+        self.assertIs(selected.y_values, inputs.y_values)
+        self.assertIs(selected.losses, inputs.losses)
+        self.assertIs(selected.color_levels, inputs.color_levels)
+        self.assertEqual(selected.explained_variance_ratio, inputs.explained_variance_ratio)
+        self.assertEqual(selected.epochs, inputs.epochs)
+
+        for invalid in (-1, True):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                ValueError, "non-negative integer",
+            ):
+                _select_runs(inputs, invalid)
+        with self.assertRaisesRegex(ValueError, "no runs for seed 3"):
+            _select_runs(inputs, 3)
 
     def test_every_source_hash_is_verified_before_any_array_is_opened(self) -> None:
         with (self.projection / "mean.npy").open("ab") as handle:
@@ -278,6 +341,7 @@ class AnimationTests(unittest.TestCase):
             self.assertEqual(len(train.lines[0].get_path_effects()), 3)
             self.assertEqual(train.lines[0].get_linewidth(), 0.9)
             self.assertEqual(train.points[0].get_markersize(), 4.0)
+            self.assertEqual(len(train.table.get_celld()), 70)
             self.assertEqual(_trajectory_dimensions(1.0), {
                 "line_core": 1.5,
                 "line_white_halo": 2.5,
@@ -292,6 +356,47 @@ class AnimationTests(unittest.TestCase):
             train.close()
             validation.close()
         np.testing.assert_array_equal(inputs.runs[0].coordinates, before)
+
+    def test_render_records_seed_and_summary_selection_metadata(self) -> None:
+        with patch("landscape_exp.animation._PROFILES", ((480, 64),)):
+            selected = render_animation_pair(
+                self.loaded,
+                self.projection,
+                animation_name="phase1_seed1_batch_compare",
+                seed=1,
+            )
+            summary = render_animation_pair(
+                self.loaded,
+                self.projection,
+                animation_name="phase1_all_runs_summary",
+            )
+
+        self.assertEqual(selected.selection_kind, "seed")
+        self.assertEqual(selected.selected_seed, 1)
+        self.assertEqual(selected.source_run_count, 9)
+        self.assertEqual(selected.rendered_run_count, 3)
+        selected_metadata = read_json(selected.directory / "metadata.json")
+        self.assertEqual(selected_metadata["run_selection"], {
+            "kind": "seed",
+            "seed": 1,
+            "source_run_count": 9,
+            "rendered_run_count": 3,
+        })
+        self.assertEqual(len(selected_metadata["runs"]), 3)
+        self.assertEqual({run["seed"] for run in selected_metadata["runs"]}, {1})
+
+        self.assertEqual(summary.selection_kind, "all_runs")
+        self.assertIsNone(summary.selected_seed)
+        self.assertEqual(summary.source_run_count, 9)
+        self.assertEqual(summary.rendered_run_count, 9)
+        summary_metadata = read_json(summary.directory / "metadata.json")
+        self.assertEqual(summary_metadata["run_selection"], {
+            "kind": "all_runs",
+            "seed": None,
+            "source_run_count": 9,
+            "rendered_run_count": 9,
+        })
+        self.assertEqual(len(summary_metadata["runs"]), 9)
 
     def test_animation_name_is_path_safe(self) -> None:
         self.assertEqual(_validate_animation_name("phase0_seed0_batch_compare"), "phase0_seed0_batch_compare")
