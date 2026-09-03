@@ -1,6 +1,6 @@
 # Loss Landscape Dynamics on CIFAR-10
 
-> **現在地** — M-01のseed 0・B64/B256/B1024各100epoch学習は完了しました。現在はrepo全体を`D:\LossLandscape`へ安全に移行し、D:側で共通PCA・両損失背景・比較GIFを作成する段階です。
+> **現在地** — M-01/M-02のseed 0最小版は完了しました。B64/B256/B1024各100epoch、303点の共通PCA、両損失背景、101 frameのGIFペアをD:側で確認済みです。次はM-03としてseed 1・2を追加します。
 
 作業順は[TODO](docs/TODO.md)、研究条件は[実験計画](docs/EXPERIMENT_PLAN.md)、保存・再開・射影の契約は[実装仕様](docs/IMPLEMENTATION_SPEC.md)を参照してください。[資料一覧](docs/README.md)と[参考文献](docs/REFERENCES.md)もあります。
 
@@ -210,7 +210,7 @@ python -B scripts\check_config.py --config configs\phase1.yaml --batch-size 1024
 
 ### seed 0の共通PCA
 
-D:上の3つのsegmentを明示し、epoch 0〜100の計303点から共通PCAを作成します。作業用FP32行列は約31.46 GiBで`D:\LossLandscape\artifacts\work\<projection_id>\weights.npy`へ保存されます。
+D:上の3つのsegmentを明示し、epoch 0〜100の計303点から共通PCAを作成しました。作業用FP32行列は約31.46 GiBで`D:\LossLandscape\artifacts\work\<projection_id>\weights.npy`へ保持します。
 
 ```powershell
 python -B scripts\compute_projection.py `
@@ -236,9 +236,13 @@ python -B scripts\render_animation.py `
 
 PCAは全303 epochのmanifestと4ファイルをhash検証し、`analysis.pt`を復元してから計算します。PCAが`projection_ready`で完了するまではC:側の3runを削除しません。既存または未完成の成果物を上書き・補修せず、再実行時は新しいIDへ保存します。
 
+完成projectionは`phase1_phase1_seed0_20260902T131747283995Z_4888eb9935a744639c91d999f8170b83`です。27,874,186 parameter、effective rank 300で、PC1/PC2の寄与率は42.5079%/19.8748%（合計62.3827%）でした。共通21×21格子のtrain/validation損失平面と、`phase1_seed0_batch_compare_20260903T030043706727Z_12b46dc979d14b48b03018cc984890ec`のGIFペアを完成しました。各GIFは101 frame・960×640・128色で、train版406,950 bytes、validation版405,227 bytesです。
+
+M-02ではログ、保存間隔、学習条件、射影残差表示、動画表示を点検し、ユーザーが可視化に問題がないことを確認しました。共通PC1/PC2平面上では3runが異なる低損失領域へ到達し、B64/B256の終点周辺がB1024より広く見えることを探索的観察として記録します。平面外に37.6173%の分散が残るため、別basinや高次元でのflatnessはこの動画だけから断定しません。
+
 ## Phase 1の完了条件
 
-まずseed 0の3runについて、共通のスクラッチ初期値、全epochのcheckpoint・実測ログ、共通PCAの座標・寄与率・残差、train背景とvalidation背景の2GIFを揃えます。その後seed 1・2を加え、9run・8GIFと再現手順を揃えます。
+seed 0の3runについて、共通のスクラッチ初期値、全epochのcheckpoint・実測ログ、共通PCAの座標・寄与率・残差、train背景とvalidation背景の2GIFが揃いました。次にseed 1・2を加え、9run・8GIFと再現手順を揃えます。
 
 バッチ条件による差、精度改善、高いPCA寄与率を必須にはしません。毎epochの記録と各GIF 3 MB以下は維持します。
 

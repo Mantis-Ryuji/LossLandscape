@@ -1,6 +1,6 @@
 # Implementation Specification for Codex
 
-> **現在地** — Phase 0と可視化pipelineの実行確認、およびM-01のseed 0・B64/B256/B1024各100epoch学習は完了しています。次はrepo全体をD:へ複製・照合して作業repoを切り替えてから、共通PCA、両背景の損失平面、GIFを作成します。
+> **現在地** — Phase 0と可視化pipelineの実行確認、およびM-01/M-02のseed 0最小版は完了しています。B64/B256/B1024各100epoch、共通PCA、両背景の損失平面、GIFペアをD:側で確認済みです。次はM-03としてseed 1・2を追加します。
 
 [ドキュメント案内に戻る](README.md)
 
@@ -8,7 +8,7 @@
 
 Phase 0・1についてはスクラッチ初期化・記録・評価・固定LR 1e-3の契約を定める。Phase 2のSWA/FGEはepoch 80終了時から100まで、共通の4epoch三角周期を5回、同じ最低LRの5点での平均比較を採用。Phase 3のModel Soupは固定LR 1e-4を採用済み。Phase 2・3の残る詳細・実装はDraftとして残す。保存容量の上限は設けず、解析用はFP32の`.pt`、再開用は毎epochの学習状態を保持する。詳細な設定・再開手順・PCA・完了条件は22節を正とする。設計の確定は実装・実行の完了を意味しない。
 
-Phase 1は、seed 0のB64/B256/B1024各100epoch学習まで完了している。次にrepo全体をD:へ複製・照合して作業repoを切り替え、比較動画を完成させた後にseed 1・2を追加する。共通条件とPhase 0で検証する学習条件は[実験計画のD-01](EXPERIMENT_PLAN.md#62-conditions)に従う。SWA/FGE/Model SoupはPhase 1の実装対象に含めない。
+Phase 1は、seed 0のB64/B256/B1024各100epoch学習、303点の共通PCA、両背景の損失平面、比較GIFペアとM-02の点検まで完了している。次にseed 1・2を追加する。共通条件とPhase 0で検証する学習条件は[実験計画のD-01](EXPERIMENT_PLAN.md#62-conditions)に従う。SWA/FGE/Model SoupはPhase 1の実装対象に含めない。
 
 目的はCIFAR-10とConvNeXt V2-Tinyを用いて、スクラッチの最適化軌跡、SWA/FGE、最後にSSL初期値からのModel Soupを観察するpipelineを構築すること。Phase 1・2のcheckpointをPhase 3のSoup候補へ流用しない。
 

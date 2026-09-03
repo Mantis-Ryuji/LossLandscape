@@ -6,9 +6,9 @@
 
 **確定した保存・再開方針（D-05の一部）:** 解析用はFP32の`.pt`、再開用は毎epochの重み・optimizer・scheduler・乱数・データ順序などの状態を保存します。最後に保存を完了したepochの次から再開し、中断したepochは先頭からやり直します。
 
-更新日: 2026-09-02
+更新日: 2026-09-03
 
-**現在地:** Phase 0とV-01〜V-05は完了しました。M-01のseed 0・B64/B256/B1024各100epoch学習も完了しています。次はrepo全体を`D:\LossLandscape`へ安全に複製し、D:側を新しい作業repoとして確認してから、共通PCA・両背景の損失平面・GIFを作成します。Phase 0の大容量成果物は保持対象外であり、以後の確認対象やPhase 1の入力には含めません。
+**現在地:** Phase 0、V-01〜V-05、M-01、M-02は完了しました。seed 0のB64/B256/B1024各100epoch、303点の共通PCA、両背景の損失平面、101 frameのGIFペアをD:側で確認済みです。次はM-03としてseed 1・2を追加します。Phase 0の大容量成果物は保持対象外であり、以後の確認対象やPhase 1の入力には含めません。
 
 [ドキュメント案内](README.md) / [実験計画](EXPERIMENT_PLAN.md) / [実装仕様案](IMPLEMENTATION_SPEC.md) / [参考文献](REFERENCES.md)
 
@@ -105,11 +105,11 @@ I-06の設定schema v3の実行記録（全件`created_artifacts: false`）:
 
 依存: S-03、V-01〜V-05。
 
-- [ ] M-01: 共通`theta_0`からseed 0のB64/B256/B1024（microbatch 64・accum 1/4/16）を実行し、同じ時間軸・共通座標で比較するtrain背景の主動画とvalidation背景の補助動画を完成させる。
-- [ ] M-02: ログ、保存間隔、学習条件、射影残差、動画表示を点検し、最小版の完了を確認。
+- [x] M-01: 共通`theta_0`からseed 0のB64/B256/B1024（microbatch 64・accum 1/4/16）を実行し、同じ時間軸・共通座標で比較するtrain背景の主動画とvalidation背景の補助動画を完成させる。
+- [x] M-02: ログ、保存間隔、学習条件、射影残差、動画表示を点検し、最小版の完了を確認。
 - [ ] M-03: D:側の`configs/phase1.yaml`でseed 1・2を追加して全9 runsを揃え、共通PCAを再計算。seedごとの動画と全runのsummary動画をtrain背景・validation背景の両方で作成し、条件別の評価表とともに保存。
 
-M-01の学習部分は完了済みです。対象segmentは次の3本で、各101時点・CSV 101行、checkpointの欠落・size不一致・identity不一致はありません。合計サイズは約125.32 GiBです。
+M-01/M-02は完了済みです。対象segmentは次の3本で、各101時点・CSV 101行、checkpointの欠落・size不一致・identity不一致はありません。合計サイズは約125.32 GiBです。
 
 | run | segment ID | 最終optimizer step | 最終validation accuracy |
 | --- | --- | ---: | ---: |
@@ -117,9 +117,9 @@ M-01の学習部分は完了済みです。対象segmentは次の3本で、各10
 | B256 / seed 0 | `20260901T204835413455Z_720286048a0b4cb9b5d9365ad7f49978` | 17,600 | 0.9386 |
 | B1024 / seed 0 | `20260902T062841348044Z_0432ed683bff4909bcd5f77fc4a1634e` | 4,400 | 0.9314 |
 
-保存容量の都合から、M-01の残りは[ルートREADMEの完全移行手順](../README.md#repo全体をdへ完全移行)でrepo全体の複製・照合とD:側への作業切替を完了してから、通常の`configs/phase1.yaml`を使って実行します。D:側のprojectionが`projection_ready`になるまではC:側のrepoを削除しません。
+repo全体をD:へ移行し、通常の`configs/phase1.yaml`で共通PCA・両背景・GIF生成まで完了しました。完成projectionは`phase1_phase1_seed0_20260902T131747283995Z_4888eb9935a744639c91d999f8170b83`で、303点・27,874,186 parameter・effective rank 300、PC1/PC2寄与率42.5079%/19.8748%（合計62.3827%）です。完成animationは`phase1_seed0_batch_compare_20260903T030043706727Z_12b46dc979d14b48b03018cc984890ec`で、train/validationとも101 frame・960×640・128色、406,950/405,227 bytesです。
 
-完全移行のため、射影の互換性判定から絶対配置だけを除外し、その他の実験契約と初期重みSHA-256を維持する変更およびCPU test 1件を追加しました。現在の全87件はユーザー実行前です。
+M-02ではユーザーが可視化に問題がないことを確認しました。共通PC1/PC2平面上では3runが異なる低損失領域へ到達し、B64/B256の終点周辺がB1024より広く見えることを探索的観察として記録します。平面外に37.6173%の分散が残るため、別basinや高次元でのflatnessは断定しません。移設対応を含む現在のCPU test suiteは87件です。
 
 最小版の完了条件: seed 0の3バッチ比較動画（train背景の主版・validation背景の補助版）と、その元となる設定・checkpoint・実測ログが揃う。
 
